@@ -73,6 +73,8 @@ def test_k_suffix_only_when_not_part_of_a_word():
 
     assert numbers_in("$52,000 known bonus") == {Decimal(52000)}
     assert numbers_in("$90hr or 120 K") == {Decimal(90), Decimal(120000)}
+    assert numbers_in("$160K – $1.5M • Offers Equity") == {Decimal(160000), Decimal(1500000)}
+    assert numbers_in("10 Mbps") == {Decimal(10)}
 
 
 def test_low_confidence_goes_to_review():  # AC-2.3

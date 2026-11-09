@@ -8,7 +8,7 @@ from decimal import Decimal
 
 from .entities import ExtractionCandidate, Outcome, PayQuote, PayQuoteCandidate, Posting, ValidationResult
 from .errors import REJECT_CODES, REVIEW_CODES, Issue, IssueCode
-from .pay import normalize_pay_quote, parse_amount
+from .pay import SUFFIX_MULTIPLIER, normalize_pay_quote, parse_amount
 
 
 @dataclass(frozen=True)
@@ -24,7 +24,7 @@ DEFAULT_POLICY = ValidationPolicy()
 
 _DASHES = re.compile(r"[‐-―−]")
 _SPACE = re.compile(r"\s+")
-_NUMBER = re.compile(r"(\d[\d,]*(?:\.\d+)?)(?:\s?([kK])(?![a-zA-Z]))?")
+_NUMBER = re.compile(r"(\d[\d,]*(?:\.\d+)?)(?:\s?([kKmM])(?![a-zA-Z]))?")
 
 
 def normalize_text(text: str) -> str:
@@ -33,11 +33,11 @@ def normalize_text(text: str) -> str:
 
 
 def numbers_in(text: str) -> set[Decimal]:
-    """All numbers in a text, commas removed and a 'k' suffix expanded (52k -> 52000)."""
+    """All numbers in a text, commas removed and k/M suffixes expanded (52k -> 52000, 1.5M -> 1500000)."""
     found: set[Decimal] = set()
-    for digits, k in _NUMBER.findall(text):
+    for digits, suffix in _NUMBER.findall(text):
         value = Decimal(digits.replace(",", ""))
-        found.add(value * 1000 if k else value)
+        found.add(value * SUFFIX_MULTIPLIER.get(suffix.lower(), 1))
     return found
 
 

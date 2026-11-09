@@ -26,16 +26,17 @@ _UNIT_ALIASES: dict[str, PayUnit] = {
     **{a: PayUnit.DAY for a in ("day", "daily", "per day", "/day")},
     **{a: PayUnit.WEEK for a in ("week", "wk", "weekly", "per week", "/week")},
     **{a: PayUnit.MONTH for a in ("month", "mo", "monthly", "per month", "/month")},
-    **{a: PayUnit.YEAR for a in ("year", "yr", "annual", "annually", "yearly", "salary", "per year", "/year", "/yr")},
+    **{a: PayUnit.YEAR for a in ("year", "yr", "annual", "annually", "annum", "yearly", "salary", "per year", "/year", "/yr")},
     **{a: PayUnit.TASK for a in ("task", "per task", "item", "per item")},
     **{a: PayUnit.PROJECT for a in ("project", "per project")},
 }
 
 _CENT = Decimal("0.01")
+SUFFIX_MULTIPLIER = {"k": 1_000, "m": 1_000_000}
 
 
 def parse_amount(value: Any) -> Decimal | None:
-    """Parse 52000, "52,000", "$52,000", "52k" or "$45.50" into a Decimal. None if unparseable."""
+    """Parse 52000, "52,000", "$52,000", "52k", "1.5M" or "$45.50" into a Decimal. None if unparseable."""
     if value is None or isinstance(value, bool):
         return None
     if isinstance(value, (int, Decimal)):
@@ -43,14 +44,14 @@ def parse_amount(value: Any) -> Decimal | None:
     if isinstance(value, float):
         return Decimal(str(value))
     text = str(value).strip().lower().replace("$", "").replace(",", "").replace("usd", "").strip()
-    match = re.fullmatch(r"(-?\d+(?:\.\d+)?)\s*(k?)", text)
+    match = re.fullmatch(r"(-?\d+(?:\.\d+)?)\s*([km]?)", text)
     if not match:
         return None
     try:
         amount = Decimal(match.group(1))
     except InvalidOperation:
         return None
-    return amount * 1000 if match.group(2) else amount
+    return amount * SUFFIX_MULTIPLIER.get(match.group(2), 1)
 
 
 def parse_unit(value: str | None) -> PayUnit | None:

@@ -87,5 +87,7 @@ def test_non_usd_is_kept_without_hourly():
 def test_parsers():
     assert parse_amount("$1,234.50") == Decimal("1234.50")
     assert parse_amount(True) is None
+    assert parse_amount("1.5M") == Decimal("1500000")
+    assert parse_unit("annum") is PayUnit.YEAR
     assert parse_unit("  Hourly ") is PayUnit.HOUR
     assert parse_unit("decade") is None
