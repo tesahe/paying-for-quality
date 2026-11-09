@@ -81,6 +81,19 @@ def test_blocked_source_is_refused_without_fetching(env, capsys):
     assert env == []  # no request was made
 
 
+def test_blocked_source_without_adapter_reports_terms_not_missing_adapter(env, tmp_path, capsys, monkeypatch):
+    # Regression: found in the real Supabase run, where a blocked 'website' source said "no collector".
+    monkeypatch.undo()  # use the real build_source
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'pfq.db'}")
+    (tmp_path / "web.toml").write_text(
+        '[[source]]\nslug = "site"\nkind = "website"\nboard = "x"\ncompany = "X"\nsegment = "expert"\n'
+        "terms_checked = false\n"
+    )
+    code, _, err = run(capsys, "collect", "--source", "site", "--registry", "web.toml")
+    assert code == 1 and "terms check" in err and "no collector" not in err
+
+
 def test_unknown_source_and_query(env, capsys):
     run(capsys, "init-db")
     code, _, err = run(capsys, "collect", "--source", "nope", "--registry", "sources.toml")

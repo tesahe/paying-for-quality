@@ -21,7 +21,7 @@ from .adapters.sources import registry
 from .adapters.storage import open_repository
 from .adapters.storage.raw_store import FileRawStore
 from .app import market, reporting
-from .core.errors import ConfigError, PfqError
+from .core.errors import ConfigError, PfqError, SourceNotAllowed
 from .core.ports import QueryResult
 
 EXTRACTORS = {"baseline": BaselineExtractor, "fake": FakeExtractor}
@@ -100,6 +100,8 @@ def cmd_collect(args, cfg) -> int:
     if args.source not in sources:
         raise ConfigError(f"unknown source '{args.source}'. Known: {', '.join(sorted(sources))}")
     info = sources[args.source]
+    if not info.terms_checked:  # before building an adapter: the terms check is the reason that matters
+        raise SourceNotAllowed(f"source '{info.slug}' has not passed its robots.txt/terms check")
     repo = open_repo(cfg)
     try:
         result = market.collect(info, registry.build_source(info), repo, FileRawStore(cfg.get("PFQ_RAW_DIR", "data/raw")), utc_now)
