@@ -27,6 +27,20 @@ class Outcome(str, Enum):
 
 
 @dataclass(frozen=True)
+class SourceInfo:
+    """One entry of the source registry (data/sources.toml)."""
+
+    slug: str
+    kind: str
+    board: str
+    company: str
+    segment: str  # "staff" (company employees) or "expert" (contractor gigs)
+    terms_checked: bool
+    robots_checked_at: str | None = None
+    terms_note: str = ""
+
+
+@dataclass(frozen=True)
 class RawPostingDoc:
     """One posting as fetched from a source, before any extraction."""
 

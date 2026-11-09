@@ -33,6 +33,26 @@ REJECT_CODES = frozenset(
 REVIEW_CODES = frozenset({IssueCode.LOW_CONFIDENCE, IssueCode.OUT_OF_BAND})
 
 
+class PfqError(Exception):
+    """A handled error. The message is shown to the user, so it must never contain secrets."""
+
+
+class SourceNotAllowed(PfqError):
+    """The source has not passed its robots.txt / terms check."""
+
+
+class SourceFetchError(PfqError):
+    """A posting source could not be reached or returned unusable data."""
+
+
+class ConfigError(PfqError):
+    """Missing or invalid configuration (.env, registry)."""
+
+
+class StorageError(PfqError):
+    """The database could not be reached or rejected an operation."""
+
+
 @dataclass(frozen=True)
 class Issue:
     code: IssueCode
