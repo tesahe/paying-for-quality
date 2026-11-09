@@ -122,6 +122,48 @@ The second boundary is **use cases → ports**. It keeps the Core testable witho
 
 Exit codes: `0` success; `1` handled error (validation, missing data, external service failure); `2` usage error (argparse default).
 
+## Data Sources
+
+### Source census (2026-11-09)
+
+Method: `scripts/source_census.py` queries the public job-board APIs for about 15 AI human-data companies, using one request per second and a generic client name. It prints counts only and stores nothing.
+
+| Board | Company | Postings | With $ pay | With hourly pay |
+|---|---|---|---|---|
+| Greenhouse `scaleai` | Scale AI | 170 | 117 | 6 |
+| Ashby `mercor` | Mercor | 86 | 86 | 6 |
+| Ashby `handshake` | Handshake | 77 | 73 | 3 |
+| Greenhouse `turing` | Turing | 46 | 23 | 0 |
+| Greenhouse `snorkelai` | Snorkel AI | 43 | 42 | 1 |
+| Ashby `surge-ai` | Surge AI | 35 | 0 | 0 |
+| Greenhouse `prolific` | Prolific | 25 | 3 | 0 |
+| Greenhouse `invisibletech` | Invisible | 20 | 14 | 0 |
+| Greenhouse `toloka` | Toloka | 16 | 0 | 0 |
+| Greenhouse `labelbox` | Labelbox | 10 | 8 | 0 |
+
+No public board was found for micro1, DataAnnotation, Outlier or Alignerr.
+
+**Finding: the market has two segments.** The public job-board APIs list mostly **staff roles**, meaning the companies' own employees, paid annual salaries. The **expert contractor gigs**, which are what "price of expertise" most directly means, are mostly on the companies' own platform sites (work.mercor.com, outlier.ai, dataannotation.tech, alignerr.com). Those need a per-site terms review before any collection. The data model records a `segment` (`staff` / `expert`) per source.
+
+### Terms and robots checks
+
+| Host | robots.txt | Provider docs |
+|---|---|---|
+| `boards-api.greenhouse.io` | Allows everything except `/embed/` | "Job Board data is publicly available, so authentication is not required for any GET endpoints." No rate limits or terms page linked |
+| `api.ashbyhq.com` | None (401) | Unauthenticated GET. Described as a feed for an organization's own careers page. No rate limits, no terms page, no third-party restrictions stated |
+| `work.mercor.com` | Allows `/` but disallows `/api/` | Terms not yet read |
+| `outlier.ai`, `alignerr.com`, `dataannotation.tech` | Allow general crawling | Terms not yet read |
+
+Neither provider prohibits or invites third-party use. Collection therefore stays minimal: one request per board per run, about weekly, with a generic client name, only listed postings, and no application endpoints.
+
+### Chosen sources
+
+- **Sprint 2:** Ashby, for Mercor and Handshake. It has structured compensation (`compensation.summaryComponents[]` with type, interval, currency, min and max) and plain-text descriptions, and it includes the strategy and ops roles this project's owner is targeting.
+- **Backup:** Greenhouse, for Scale AI. Pay appears in the description text only.
+- **Sprint 3:** review the expert-gig platforms' terms; add any that allow collection.
+
+The registry lives in `data/sources.toml`. A source with `terms_checked = false` cannot be collected.
+
 ## Data Model and Persistence Plan
 
 ### Database approach

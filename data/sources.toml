@@ -1,0 +1,45 @@
+# Source registry. `pfq collect` refuses any source with terms_checked = false (AC-1.3).
+# Census method and findings: docs/architecture.md, "Data Sources". Re-run: scripts/source_census.py
+#
+# segment: "staff"  = the company's own employee roles (salaried; public job-board APIs)
+#          "expert" = contractor expert gigs (company platform sites; not yet terms-checked)
+
+[[source]]
+slug = "ashby-mercor"
+kind = "ashby"
+board = "mercor"
+company = "Mercor"
+segment = "staff"
+terms_checked = true
+robots_checked_at = "2026-11-09"
+terms_note = "api.ashbyhq.com has no robots.txt (401). Docs: unauthenticated GET, intended for the employer's own careers page; no terms, rate limits or third-party restrictions stated. Collect one request per run, weekly."
+
+[[source]]
+slug = "ashby-handshake"
+kind = "ashby"
+board = "handshake"
+company = "Handshake"
+segment = "staff"
+terms_checked = true
+robots_checked_at = "2026-11-09"
+terms_note = "Same Ashby API and findings as ashby-mercor."
+
+[[source]]
+slug = "greenhouse-scaleai"
+kind = "greenhouse"
+board = "scaleai"
+company = "Scale AI"
+segment = "staff"
+terms_checked = true
+robots_checked_at = "2026-11-09"
+terms_note = "boards-api.greenhouse.io robots.txt disallows only /embed/. Docs: 'Job Board data is publicly available, so authentication is not required for any GET endpoints.' No rate limits or terms stated. Backup source; no adapter yet."
+
+[[source]]
+slug = "mercor-platform"
+kind = "website"
+board = "work.mercor.com"
+company = "Mercor"
+segment = "expert"
+terms_checked = false
+robots_checked_at = "2026-11-09"
+terms_note = "robots.txt allows / but disallows /api/ (listings likely load from it). Terms of service not yet read. Sprint 3."
