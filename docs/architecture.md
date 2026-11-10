@@ -22,7 +22,7 @@ flowchart LR
     app --> ports{{Ports}}
     ports -.implemented by.-> src[PostingSource adapters<br/>Ashby (Greenhouse later)]
     ports -.implemented by.-> rates[RateSource adapters<br/>cited file, BLS OEWS, job boards]
-    ports -.implemented by.-> llm[Extractor / Judge adapters<br/>baseline regex, fake; LLM in S3]
+    ports -.implemented by.-> llm[Extractor / Judge adapters<br/>baseline regex, fake; LLM in S4]
     ports -.implemented by.-> repo[Repository adapters<br/>Postgres / SQLite]
     ports -.implemented by.-> ds[DatasetLoader adapters<br/>SummEval, ...]
     repo --> db[(Supabase Postgres<br/>system of record)]
@@ -79,7 +79,7 @@ tests/               ✓ pytest: core/, adapters/, app/, test_cli.py
 
 ### Core rules (the Engineering Core)
 
-These are the behaviors the course's Engineering Core refers to. All are pure functions over plain data and are unit-testable without a database, network or API key.
+The course calls the project's central, testable logic its "Engineering Core"; these rules are it. All are pure functions over plain data and are unit-testable without a database, network or API key.
 
 1. **Pay normalization.** Convert a pay quote to an hourly USD figure.
    - Units and default conversions: `hour` ×1, `day` ÷8, `week` ÷40, `month` ÷(2080/12), `year` ÷2080. Constants live in one place in `core/pay.py` and are documented, not scattered.
@@ -96,7 +96,7 @@ These are the behaviors the course's Engineering Core refers to. All are pure fu
    - **Review** (`LOW_CONFIDENCE`, `OUT_OF_BAND`):
      - The extractor's confidence is below 0.7. A deterministic extractor reports no confidence and skips this check.
      - The hourly result is outside $5–$500.
-     - Both thresholds are provisional until the Sprint 3 accuracy evaluation.
+     - Both thresholds are provisional until the extraction accuracy evaluation (Sprint 4).
    - Any reject code beats any review code.
 3. **Agreement and rater quality.** Cohen's kappa (two raters), Fleiss' kappa and Krippendorff's alpha (many raters, missing labels allowed), per-rater scorecards (agreement with leave-one-out consensus or with expert consensus), and ambiguous-item detection (low per-item agreement).
 4. **Rate validation** (`validate_rate`, `core/rates.py`). Turn a `RateCandidate` from any source into a `RateObservation` or a rejection. There is no review queue for rates.
@@ -115,7 +115,7 @@ Ports are `typing.Protocol` classes in `core/ports.py`. Use cases depend on thes
 | Port              | Method(s) (sketch)                                             | Real adapter                                                                           | Test fake                                       |
 | ----------------- | -------------------------------------------------------------- | -------------------------------------------------------------------------------------- | ----------------------------------------------- |
 | `PostingSource` ✓ | `list_postings() -> Iterable[RawPostingDoc]`               | `AshbySource` (public job-board API); Greenhouse later                                 | `FakeSource`: fixed documents or a raised error  |
-| `Extractor` ✓   | `extract(doc: RawPostingDoc) -> ExtractionCandidate`; `name`, `prompt_version` | `BaselineExtractor` (deterministic: structured compensation, else a pay regex). LLM client in S3 | `FakeExtractor`: scripted candidates, including invented pay and exceptions |
+| `Extractor` ✓   | `extract(doc: RawPostingDoc) -> ExtractionCandidate`; `name`, `prompt_version` | `BaselineExtractor` (deterministic: structured compensation, else a pay regex). LLM client in S4 | `FakeExtractor`: scripted candidates, including invented pay and exceptions |
 | `RateSource` ✓  | `list_rates() -> Iterable[RateCandidate]`                    | `CitedRates` (`data/rates.toml`), `BlsOewsRates` (BLS API), `JobBoardRates` (accepted postings; in `app/rates.py` because it reads the repository) | `FakeRates` in `tests/app/test_rates.py`; a fake fetch for BLS |
 | `RawStore` ✓    | `put(slug, digest, bytes) -> path`; `get(path) -> bytes`     | `FileRawStore`: `data/raw/<source>/<sha256>.json`                                      | The same class on a temp folder                  |
 | `Repository` ✓  | `apply_schema` (base schema + migrations), `upsert_source`, collection-run bookkeeping, `find_raw_posting` / `has_listing` / `insert_raw_posting` / `touch_raw_posting`, `pending_extraction`, `record_extraction`, `upsert_rate_source`, `insert_rate`, `current_posted_pay`, `query`, `count_rows`, `close` | `PostgresRepository` (Supabase); `SqliteRepository` (local) | Temporary SQLite file                            |
@@ -145,7 +145,7 @@ The second boundary is **use cases → ports**. It keeps the Core testable witho
 | `pfq init-db`                                 | Create the schema, or upgrade an existing database by applying newer migrations | S2 ✓ (migrations: S3 ✓) |
 | `pfq sources`                                 | List registered sources and whether they may be collected                    | S2 ✓          |
 | `pfq collect --source <slug>`                 | Pull postings from one source; store new or changed snapshots                | S2 ✓          |
-| `pfq extract [--extractor baseline\|fake] [--limit N]` | Run extraction on unprocessed snapshots; validate; store or queue for review | S2 ✓ (LLM extractor: S3) |
+| `pfq extract [--extractor baseline\|fake] [--limit N]` | Run extraction on unprocessed snapshots; validate; store or queue for review | S2 ✓ (LLM extractor: S4) |
 | `pfq rates load --source <slug>`              | Load rates from one registered rate source through Core validation          | S3 ✓          |
 | `pfq query <name> [--json]`                   | Run a named, committed SQL analysis (`pay_by_domain`, `pay_transparency`, `rates_by_domain`) | S2 ✓ (`rates_by_domain`: S3 ✓) |
 | `pfq review list \| accept <id> \| reject <id>` | Work the low-confidence review queue                                         | S4            |
@@ -155,7 +155,7 @@ The second boundary is **use cases → ports**. It keeps the Core testable witho
 
 Exit codes: `0` success; `1` handled error (validation, missing data, external service failure); `2` usage error (argparse default).
 
-### Code path: `pfq extract`
+### Code path: `pfq extract` (Sprint 2)
 
 This is the path that decides whether an extracted number can be trusted.
 
@@ -178,7 +178,7 @@ This is the path that decides whether an extracted number can be trusted.
 
 Key decision: only rows written in step 3.4 for accepted candidates feed the analysis queries. An invented or implausible figure can be inspected in `extraction_run`, but it never reaches `pay_by_domain`.
 
-### Code path: `pfq rates load` (Sprint 3)
+### Code path: `pfq rates load` (Sprint 3: the code path explained for this sprint)
 
 This path decides whether a pay figure, from any source, may enter the rate table.
 
@@ -232,7 +232,7 @@ No public board was found for micro1, DataAnnotation, Outlier or Alignerr.
 | `boards-api.greenhouse.io` | Allows everything except `/embed/` | "Job Board data is publicly available, so authentication is not required for any GET endpoints." No rate limits or terms page linked |
 | `api.ashbyhq.com` | None (401) | Unauthenticated GET. Described as a feed for an organization's own careers page. No rate limits, no terms page, no third-party restrictions stated |
 | `work.mercor.com` | Allows `/` but disallows `/api/` | `mercor.com/terms` §2.2(b), (c), (e) prohibit scrapers and "automated or non-automated" copying (read 2026-11-09) |
-| `alignerr.com` | Allows general crawling | Terms prohibit crawling or scraping "through use of manual or automated means" (read 2026-11-09) |
+| `alignerr.com` | Allows general crawling | Terms (read 2026-11-09 by an AI research subagent; quotes recorded in `docs/ai-usage.md`) prohibit crawling or scraping "through use of manual or automated means" (read 2026-11-09) |
 | `outlier.ai`, `dataannotation.tech`, `micro1.ai` | Allow general crawling | Not fully read. Not needed: platform sites are excluded by decision |
 | `api.bls.gov` (rate source) | n/a (API) | `bls.gov/developers/termsOfService.htm`: no end-use controls. Cite the retrieval date and state that "BLS.gov cannot vouch for the data or analyses derived from these data after the data have been retrieved from BLS.gov." BLS material is public domain. v1 without a key: 25 queries per day |
 
@@ -309,6 +309,12 @@ Hybrid: one `Repository` port, two adapters, chosen by `DATABASE_URL` in `.env`.
 - `source 1─n raw_posting 1─n extraction_run`; an accepted run yields `1 posting 1─n pay_quote`; a review outcome yields `1 review_item`.
 - `dataset 1─n item`, `dataset 1─n rater`, `item n─n rater` through `label`.
 - `rate_source 1─n rate_observation`; a job-board rate optionally links `n─1 raw_posting`.
+- **Vocabularies** (`core/vocab.py`, also CHECK constraints in the schema):
+  - `engagement`: `employee`, `contractor`, `intern`, `temporary`, `unknown`;
+  - `rater_kind` (what labor a rate prices): `expert`, `crowd`, `staff`, `outside_option` (what the expert earns outside AI data work, e.g. from BLS);
+  - `provenance_kind`: `job_board`, `gov_statistic`, `literature`, `dataset_paper`, `self_timed`.
+
+  `source.segment` (staff/expert) is a coarse **default per posting source**. `rate_observation.rater_kind` is set **per rate**: a contract role on a "staff" job board becomes an `expert` rate.
 - Market and quality families share no foreign keys. They meet in analysis views and in the report, joined on `domain`. The domain vocabulary is fixed in `core/vocab.py` (Sprint 3), aligned with MT-Bench's categories: `coding`, `math`, `stem_science`, `medicine`, `law`, `finance`, `writing_humanities`, `languages`, `reasoning_general`, `none`.
 
 ### What persists vs. what is transient
@@ -357,9 +363,9 @@ Policy: **Core stays standard-library only, permanently.** Adapters and analysis
 | # | Decision                                                  | Default until decided                    |
 | - | --------------------------------------------------------- | ---------------------------------------- |
 | 1 | LLM provider and model (a low-cost "flash"-class model is the leading option); exact monthly cap (low). Needed in S4 | Fake extractor/judge only |
-| 2 | LLM SDK vs. plain HTTP                                    | Decided with the provider (S3)           |
+| 2 | LLM SDK vs. plain HTTP                                    | Decided with the provider (S4)           |
 | 3 | Non-USD pay conversion                                    | Flag (`CURRENCY_UNSUPPORTED`) and exclude from hourly figures |
-| 4 | Final plausibility band and confidence threshold          | Provisional $5–$500/h and 0.7, reviewed after the S3 accuracy evaluation |
+| 4 | Final plausibility band and confidence threshold          | Provisional $5–$500/h and 0.7, reviewed after the S4 accuracy evaluation. Rates use their own $1–$500/h band (`RATE_POLICY`) |
 | 5 | How job-board titles map to domains beyond keywords, and whether `contractor`/`temporary` always means `expert` | Provisional keyword table (`domain_from_title`) and rule (`rater_kind_for`) until LLM extraction in S4 |
 
 **Decided in Sprint 1:** Supabase Postgres as the system of record with local SQLite for tests (hybrid); pytest as the test runner.

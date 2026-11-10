@@ -113,7 +113,7 @@ Given/When/Then. IDs map to requirements (AC-3.1 belongs to FR-3).
 **FR-8 Report**
 - **AC-8.1** Given market and quality results exist, when `pfq report` runs, then each number in the report can be traced to a named query or Core function (shown in the report's source notes).
 
-**FR-9 Load pay rates** (Sprint 3)
+**FR-9 Load pay rates** (Sprint 3; all six implemented and tested, see `docs/sprint-status.md`)
 - **AC-9.1** Given a cited-rates entry with no citation, when `pfq rates load` runs, then it is rejected with `CITATION_MISSING` and no row is written.
 - **AC-9.2** Given an annual government wage of $104,000 for an occupation mapped to `medicine`, then the stored rate is $50.00/h with `rater_kind = outside_option` and its citation.
 - **AC-9.3** Given an accepted job-board posting with an hourly contract pay quote, when job-board rates are loaded, then exactly one rate exists with `engagement = contractor`, linked to its `raw_posting`. Loading again creates no duplicates.
@@ -136,11 +136,12 @@ These are the first behaviors to be proven with tests (the Sprint 1 requirement 
 | Pay normalization (FR-3) | `$52,000/year`; `$40–60/hour` | `$5/task` with no time stated; negative amount; min > max | `$25.00`; `$40–60`; empty hourly + `UNIT_NOT_NORMALIZABLE`; validation errors | Table-driven `pytest` cases with values worked out by hand beforehand |
 | Extraction validation (FR-2) | Candidate with evidence quotes found in the text | Candidate inventing a pay figure absent from the text; low confidence | Accepted; `EVIDENCE_NOT_FOUND`; sent to review | Tests using scripted fake-extractor outputs; later, real-LLM accuracy on the 100 hand-labeled postings (FR-5) |
 | Idempotent collection (FR-1) | Two runs with unchanged content | Changed content; source not terms-checked | 3 snapshots then "0 new"; new version added; refusal | Use-case test with a fake source and local database; row counts asserted |
+| Rate loading (FR-9) | A cited figure; an annual BLS wage; an hourly contract posting | No citation; an unknown domain; a per-task or EUR rate; an unchecked source; a version-1 database | Stored once with hourly USD; `CITATION_MISSING` / `VOCAB_UNKNOWN` / rejection; refusal before any fetch; migrated with data kept | Core, use-case, adapter, migration and CLI tests (`tests/core/test_rates.py` and others); a real Supabase migration and load |
 | Agreement metrics (FR-6) | Published Fleiss' kappa example | Perfect agreement; one category only; missing labels | Matches published value; 1.0; "undefined" with reason; handled | Comparison with published values, plus a simulation where a planted bad rater must rank last |
 
 ## Exploration Zone (not committed for class)
 
-These are interesting, but not graded and not promised before Dec 9:
+These are interesting, but not graded and not promised before the course ends (Sprint 5, Dec 9, 2026):
 
 - Hedonic regression of pay on credentials, domain and platform with proper controls (FR-4 covers simple comparisons only).
 - Dawid–Skene rater model; full LLM-judge bias audit (position, verbosity, self-preference); cost of routing between human and LLM review.

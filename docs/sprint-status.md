@@ -79,7 +79,7 @@ What the new tests check:
 | none | crowd | 4 | 9.50 | Prolific guidance, Mechanical Turk study |
 
 **What this first output already shows (not yet a finding).**
-- The expert rates on hand ($95–$111.50/h midpoints for the two red-teaming roles and GPQA) sit above the experts' outside option ($82.81/h for physicists).
+- The expert rates on hand (in `stem_science`: the CBRNE red-teaming role at a $111.50/h midpoint and GPQA at $95/h; the cybersecurity red-teaming role, $95/h, is counted under `coding`) sit above the experts' outside option ($82.81/h for physicists).
 - Crowd rates sit an order of magnitude lower.
 - The expert sample is tiny (n = 1–2 per domain). Sprint 4's quality side supplies the other half of the comparison.
 
@@ -98,15 +98,15 @@ What the new tests check:
 - First quality slice: load SummEval, then agreement metrics and expert vs. crowd.
 - The LLM extractor, evaluated on hand labels. The likely corpus is dataset papers, to recover rater pay and qualifications.
 - `pfq review` commands.
-- Required hardening (error handling, dependency justification, a bounded refactor).
+- Required hardening (error handling, dependency justification, a bounded refactor). This includes the Supabase test run that failed once in Sprint 3 (above): add connection retry or timeout handling, or record the cause.
 
 ### Peer feedback
 
-**Status: not received by submission.** No Peer Review 1 feedback on this project had reached me before the Sprint 3 submission. **Follow-up:** I will ask my assigned reviewer for their recommendations. In Sprint 4 I will record at least one recommendation and whether I accepted, adapted, postponed or rejected it, with the reason.
+**Status: not received by submission.** No feedback from Peer Review 1 (the course's separate peer-review assignment) on this project had reached me before the Sprint 3 submission. **Follow-up:** I will ask my assigned reviewer for their recommendations. In Sprint 4 I will record at least one recommendation and whether I accepted, adapted, postponed or rejected it, with the reason.
 
 ### Sprint 3 commits
 
-`git log main..sprint-3 --oneline` before the merge: docs status fix, Core rate model, migrations and rate storage, rate sources and CLI, tests for each, docs.
+On `sprint-3`: a docs status fix, the Core rate model, migrations and rate storage, rate sources and the CLI, tests for each, and docs. The branch was then merged into `main` (`merge: sprint-3 into main`) and kept.
 
 ---
 

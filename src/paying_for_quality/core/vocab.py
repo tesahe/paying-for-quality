@@ -1,7 +1,7 @@
 """Closed vocabularies shared by every pay source (and, later, the quality side).
 
 The domain list is aligned with MT-Bench's categories so that market rates and quality results can be
-joined on `domain` (docs/architecture.md, "Domain vocabulary").
+joined on `domain` (docs/architecture.md, "Relationships").
 """
 
 from __future__ import annotations
