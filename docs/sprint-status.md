@@ -1,5 +1,115 @@
 # Sprint Status
 
+## Sprint 3: Expansion and Integration: the source-agnostic rate model
+
+**Branch:** `sprint-3` · **Status:** complete (merged into `main`, branch kept)
+
+### The improvement
+
+**Every pay figure, from any source, now enters through one Core-validated, cited, hourly-USD path** and is stored in one table, `rate_observation`. It builds on Sprint 2:
+- it reuses Core pay normalization, the registry's terms gate, the shared SQL repository and the CLI;
+- the Sprint 2 posting pipeline is unchanged and becomes one rate source among three.
+
+```
+pfq init-db                           →  migrates a Sprint 2 database (version 1) to version 2
+pfq rates load --source cited-rates   →  data/rates.toml (7 published figures, each cited)
+pfq rates load --source bls-oews      →  BLS OEWS hourly medians for 8 expert occupations (outside option)
+pfq rates load --source job-boards    →  rates from accepted job-board postings, with engagement from the posting
+pfq query rates_by_domain             →  median hourly rate by domain and rater kind (aggregate, no company names)
+```
+
+**Why this improvement (scope decision).** The plan going in was an LLM extractor measured on 100 hand-labeled postings. Checking the data source first changed it:
+- Expert contractor pay sits on the companies' own platform sites. Their terms forbid collection: Mercor's terms §2.2 and Alignerr's "Restrictions" item 8 both cover manual copying too.
+- This is a public project aimed at jobs in the same industry.
+
+The owner therefore reframed the project as **"Cost of Quality"** (`AGENTS.md` §3–4). Pay is a cited input from neutral public sources. Without a source-agnostic rate model the price side has no data, so this became the Sprint 3 improvement, and the LLM extractor moved to Sprint 4.
+
+**Requirement:** FR-9 with AC-9.1–9.6 (`docs/requirements.md`). **Code path:** `docs/architecture.md`, "Code path: `pfq rates load`".
+
+### What was built
+
+- **Core** (standard library only):
+  - `core/vocab.py`: closed vocabularies for domain, engagement, rater kind and provenance, plus `domain_from_title`.
+  - `core/rates.py::validate_rate`: vocabulary, then citation, then `normalize_pay_quote`, then the $1–$500/h band. Any issue rejects. New codes `CITATION_MISSING` and `VOCAB_UNKNOWN`.
+- **Storage:**
+  - numbered migrations (`schema/migrations/<dialect>/002_rate_observation.sql`) applied by `pfq init-db`;
+  - tables `rate_source` and `rate_observation`. The latter has no company column, which enforces the aggregate-only rule in the schema.
+- **Rate sources** (`[[rate_source]]` in `data/sources.toml`):
+  - `CitedRates`;
+  - `BlsOewsRates`, with BLS's required retrieval date and disclaimer in each citation;
+  - `JobBoardRates`.
+- **CLI:** `pfq rates load`; `pfq sources` also lists rate sources; `pfq init-db` reports the version. Query: `rates_by_domain`.
+
+### Automated tests
+
+| Command | Expected | Observed (2026-11-09) |
+|---|---|---|
+| `.venv/bin/pytest` (no network, no `.env` needed) | All pass; Supabase tests deselected | **133 passed, 32 deselected** (Sprint 2: 89) |
+| `.venv/bin/pytest -m supabase` (needs `PFQ_TEST_DATABASE_URL`) | Repository, use-case and query tests pass on real Postgres in throwaway schemas | **32 passed, 133 deselected** (~2.5 min; Sprint 2: 25). An earlier run the same day had 11 setup errors and 1 failure on the Postgres side; it took 8.5 minutes of wall-clock time against about 2 minutes of test time. The failing tests passed when rerun alone, and a full rerun passed. The cause is unconfirmed; slow or dropped connections to Supabase's pooler are the likely suspect |
+
+What the new tests check:
+- **AC-9.1 (rejection):** an uncited rate is rejected with `CITATION_MISSING` and writes nothing.
+- **AC-9.2 (normalization):** $104,000 a year becomes $50.00/h, `outside_option`.
+- **AC-9.3 (job-board rates):** a Contract hourly posting becomes exactly one `contractor`/`expert` rate linked to its posting. A full-time one becomes `employee`/`staff`. Loading twice adds nothing.
+- **AC-9.4 (aggregate query):** `rates_by_domain` gives medians across three provenance kinds, with no company column.
+- **AC-9.5 (migration):** a version-1 database with data migrates to version 2 with its rows kept, and ends up with the same tables as a fresh database. A second run is a no-op. A broken migration leaves version 1.
+- **AC-9.6 (terms gate):** an unchecked rate source is refused before any fetch, through both the use case and the CLI.
+- **Committed data:** every entry in `data/rates.toml` passes Core validation and carries a retrieval date.
+- **Schema:** the CHECK constraints match the Core vocabularies, and the dialects have the same migration numbers.
+- **BLS adapter:** tested against the live response shape, including top-coded and suppressed values.
+
+### Manual / integration check: real run against Supabase (2026-11-09)
+
+| Step | Result |
+|---|---|
+| `pfq init-db` (Supabase still at version 1, holding the Sprint 2 data) | `Applied migration(s) 2; schema is at version 2.` Then `pay_transparency` still shows Mercor 81/83 and Handshake 61/77 (data kept) |
+| `pfq init-db` again | `Schema is up to date (version 2).` |
+| `pfq rates load --source cited-rates` | `7 rates: 7 new, 0 unchanged, 0 rejected`; on re-run `0 new, 7 unchanged` |
+| `pfq rates load --source bls-oews` (live BLS API, 8 GETs) | `8 rates: 8 new, 0 unchanged, 0 rejected` (May 2025 estimates) |
+| `pfq rates load --source job-boards` | `139 rates: 139 new`: the 142 accepted postings that state pay, minus the 3 in GBP or EUR (not hourly USD) |
+| `pfq query rates_by_domain` | 18 rows. Examples below |
+
+| domain | rater kind | n | median $/h | sources |
+|---|---|---|---|---|
+| stem_science | expert | 2 | 103.25 | job-board contract role + GPQA paper |
+| stem_science | outside_option | 1 | 82.81 | BLS, physicists |
+| coding | staff | 40 | 128.61 | job boards |
+| coding | outside_option | 1 | 65.38 | BLS, software developers |
+| reasoning_general | expert | 1 | 35.00 | MT-Bench paper |
+| none | crowd | 4 | 9.50 | Prolific guidance, Mechanical Turk study |
+
+**What this first output already shows (not yet a finding).**
+- The expert rates on hand ($95–$111.50/h midpoints for the two red-teaming roles and GPQA) sit above the experts' outside option ($82.81/h for physicists).
+- Crowd rates sit an order of magnitude lower.
+- The expert sample is tiny (n = 1–2 per domain). Sprint 4's quality side supplies the other half of the comparison.
+
+### Known limitations
+
+- **Small expert sample.** Only 3 public job-board postings are contract roles, and 2 of them give hourly pay (the Handshake "AI Red Teamer" roles). The cited figures are a handful. Every row shows `n`, and none should be read as a market estimate.
+- **Provisional rules.** Domain comes from title keywords (`domain_from_title`). `contractor`/`temporary` are taken to mean `expert` (`rater_kind_for`). Both are to be replaced by LLM extraction (Sprint 4).
+- **BLS** returns only the latest estimates (no history). Its wages exclude the self-employed, which matters for writers, translators and lawyers.
+- **Cited figures** differ in date (2017–2026) and meaning (a platform minimum vs. a paper's average). The `citation_note` says which; the query does not adjust for it.
+- `rates_by_domain` is a simple median; no weighting or adjustment.
+- **Carried over:** no LLM extraction; `pfq review` not built; collection run by hand; Supabase's free plan pauses after about 7 days idle.
+- **The Sprint 2 recorded demo has not been recorded yet.**
+
+### Next step (Sprint 4)
+
+- First quality slice: load SummEval, then agreement metrics and expert vs. crowd.
+- The LLM extractor, evaluated on hand labels. The likely corpus is dataset papers, to recover rater pay and qualifications.
+- `pfq review` commands.
+- Required hardening (error handling, dependency justification, a bounded refactor).
+
+### Peer feedback
+
+**Status: not received by submission.** No Peer Review 1 feedback on this project had reached me before the Sprint 3 submission. **Follow-up:** I will ask my assigned reviewer for their recommendations. In Sprint 4 I will record at least one recommendation and whether I accepted, adapted, postponed or rejected it, with the reason.
+
+### Sprint 3 commits
+
+`git log main..sprint-3 --oneline` before the merge: docs status fix, Core rate model, migrations and rate storage, rate sources and CLI, tests for each, docs.
+
+---
+
 ## Sprint 2: Narrow Working System
 
 **Branch:** `sprint-2` · **Status:** complete (merged into `main` in `ed7247f`, branch kept). The recorded demo has not been made yet.
@@ -100,7 +210,7 @@ The focused improvement is **real LLM extraction with measured accuracy**:
 
 ### Peer feedback
 
-None received yet.
+Not received during Sprint 2 (see Sprint 3 for the current status).
 
 ---
 

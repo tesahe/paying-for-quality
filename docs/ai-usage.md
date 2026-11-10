@@ -30,3 +30,24 @@ How I use AI tools on this project, what I keep, change or reject, and how AI-as
 - **What I modified.** I asked for the job-board providers' API docs to be read before any source was enabled, not just robots.txt. The result is recorded per source in `data/sources.toml`.
 - **What I rejected.** Collecting from the platform sites now: their robots.txt files allow most pages, but I haven't read their terms.
 - **How it was verified.** `scripts/source_census.py` re-runs the counts. The registry blocks unchecked sources, which is tested. The real run showed 142 of 160 accepted postings state pay, almost all as annual salaries.
+
+## Sprint 3 Log
+
+| Area | What I had the AI do | My direction and decisions | Verification |
+|---|---|---|---|
+| Direction check | Compare the docs with the code (a drift check, `AGENTS.md` §6) and challenge the planned Sprint 3 scope | I asked for a challenge rather than agreement. I accepted the drift findings: segment set per source, department stored as `domain`, `init-db` unable to upgrade, a review queue that never held failures | Each claim checked against the source; findings recorded in this sprint's doc corrections (`docs/architecture.md`, "What Changed") |
+| Sources research | Two research subagents: BLS API terms, series-ID format and current values; published figures on rater pay with exact quotes | I required an exact quote and URL for every figure, and that anything unconfirmed be dropped | Spot-checked against the saved sources: MT-Bench "around $35", GPQA "approximately $95 per hour", BLS terms and the 2025 values. Every `data/rates.toml` entry is tested to pass Core validation |
+| Implementation | Core rate model, migrations, adapters, CLI, tests, docs on `sprint-3` | I set the decisions first: aggregate-only output, the 10-domain vocabulary, numbered SQL migrations (no library), a new table beside `pay_quote`, the LLM extractor in Sprint 4 | 133 tests offline; 32 against Supabase; real migration and load on Supabase (`docs/sprint-status.md`) |
+
+**Consequential AI contribution (data sourcing → the "Cost of Quality" reframe):**
+- **What the AI produced.** It found that the expert pay my question needs sits on the companies' own work platforms. It had a subagent read their terms: Mercor's (§2.2) and Alignerr's ("Restrictions" item 8) prohibit scraping, including manual copying. It also found that some expert contract roles (Handshake "AI Red Teamer", $65–158/h) already appear on the public job boards, mislabeled as staff. It then proposed five alternatives: a cost-of-quality toolkit with pay as a cited input; aggregate-only job-board statistics; extraction from dataset papers; simulation; asking companies directly.
+- **How I reviewed it.** I weighed it against what matters most to me: this is a public resume project aimed at jobs at these same companies. Scraping their platforms, or even publishing named-company pay comparisons, would look bad and could break their terms, even if robots.txt allows it.
+- **What I decided.**
+  - **Accepted:** the cost-of-quality framing (Alt A), plus outside-option wages from BLS.
+  - **Modified:** listings are kept, but **only from public job-board APIs, never company websites**, and job-board results are published as aggregates only. I had the rules written into `AGENTS.md` §4.7–4.9.
+  - **Rejected:** collecting from or hand-copying the platform sites, and the original Sprint 3 scope (an LLM extractor on postings), which I moved to Sprint 4.
+- **How it was verified.**
+  - The terms gate is tested (an unchecked rate source is refused before any fetch).
+  - Citations are enforced in Core and tested (`CITATION_MISSING`).
+  - The schema has no company column, so the aggregate-only rule holds in the data model itself.
+  - The real run loaded 154 rates from three kinds of source, and `rates_by_domain` returned aggregates only.
