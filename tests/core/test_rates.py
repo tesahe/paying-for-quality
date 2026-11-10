@@ -83,6 +83,13 @@ def test_rates_that_cannot_be_clean_hourly_usd_are_rejected(overrides, code):
     assert code in codes(result)
 
 
+def test_low_published_crowd_wage_is_kept():
+    """The rate floor is $1/h, not the $5/h posting floor: a ~$2/h crowd median is a real figure."""
+    result = validate_rate(cited(amount_min=2, amount_max=2, unit="hour", rater_kind="crowd", domain="none",
+                                 provenance_kind="literature"))
+    assert result.accepted
+
+
 def test_missing_external_key_is_rejected():
     assert IssueCode.MISSING_FIELD in codes(validate_rate(cited(external_key=" ")))
 

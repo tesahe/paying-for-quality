@@ -73,4 +73,4 @@ def test_pay_transparency(repo, raw_store, clock):
 def test_unknown_query_lists_the_available_ones(repo):
     with pytest.raises(PfqError, match="pay_by_domain"):
         run_query(repo, "drop_everything")
-    assert available_queries() == ["pay_by_domain", "pay_transparency"]
+    assert available_queries() == ["pay_by_domain", "pay_transparency", "rates_by_domain"]
