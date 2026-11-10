@@ -110,3 +110,70 @@ class ValidationResult:
     outcome: Outcome
     posting: Posting | None
     issues: tuple[Issue, ...] = ()
+
+
+@dataclass(frozen=True)
+class RateSourceInfo:
+    """One `[[rate_source]]` entry of the source registry (data/sources.toml)."""
+
+    slug: str
+    kind: str  # adapter: "cited", "bls_oews", "job_boards"
+    provenance_kind: str
+    terms_checked: bool
+    checked_at: str | None = None
+    terms_note: str = ""
+    options: Mapping[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class RateCandidate:
+    """A pay rate from any source, before Core validation. Untrusted until validated."""
+
+    external_key: str  # stable per source, so loading twice does not duplicate
+    amount_min: Any
+    amount_max: Any
+    unit: str | None
+    engagement: str
+    rater_kind: str
+    domain: str
+    provenance_kind: str
+    currency: str = "USD"
+    occupation: str | None = None
+    region: str | None = None
+    as_of: str | None = None
+    citation_url: str | None = None
+    citation_note: str = ""
+    raw_posting_id: int | None = None  # set for job-board rates instead of a citation
+
+
+@dataclass(frozen=True)
+class RateObservation:
+    """A validated rate with an hourly USD range and its provenance."""
+
+    external_key: str
+    amount_min: Decimal
+    amount_max: Decimal
+    currency: str
+    unit: PayUnit
+    hourly_min_usd: Decimal
+    hourly_max_usd: Decimal
+    engagement: str
+    rater_kind: str
+    domain: str
+    provenance_kind: str
+    occupation: str | None
+    region: str | None
+    as_of: str | None
+    citation_url: str | None
+    citation_note: str
+    raw_posting_id: int | None
+
+
+@dataclass(frozen=True)
+class RateValidation:
+    observation: RateObservation | None  # None when rejected
+    issues: tuple[Issue, ...] = ()
+
+    @property
+    def accepted(self) -> bool:
+        return self.observation is not None

@@ -6,7 +6,9 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Iterable, Protocol, Sequence
 
-from .entities import ExtractionCandidate, RawPostingDoc, SourceInfo, ValidationResult
+from .entities import (
+    ExtractionCandidate, RateCandidate, RateObservation, RateSourceInfo, RawPostingDoc, SourceInfo, ValidationResult,
+)
 
 
 class PostingSource(Protocol):
@@ -18,6 +20,12 @@ class Extractor(Protocol):
     prompt_version: str
 
     def extract(self, doc: RawPostingDoc) -> ExtractionCandidate: ...
+
+
+class RateSource(Protocol):
+    """Any origin of pay rates: cited figures, government statistics, stored job-board postings."""
+
+    def list_rates(self) -> Iterable[RateCandidate]: ...
 
 
 class RawStore(Protocol):
@@ -33,6 +41,20 @@ class PendingRaw:
     raw_posting_id: int
     source_slug: str
     raw_path: str
+
+
+@dataclass(frozen=True)
+class PostedPay:
+    """One hourly-normalizable pay quote of a current, Core-accepted posting (input to job-board rates)."""
+
+    raw_posting_id: int
+    raw_path: str
+    title: str
+    quote_index: int
+    amount_min: Any
+    amount_max: Any
+    currency: str
+    unit: str
 
 
 @dataclass(frozen=True)
@@ -69,6 +91,14 @@ class Repository(Protocol):
         self, raw_posting_id: int, extractor: str, prompt_version: str, created_at: datetime,
         candidate_json: str, result: ValidationResult,
     ) -> int: ...
+
+    def upsert_rate_source(self, info: RateSourceInfo) -> int: ...
+
+    def insert_rate(self, rate_source_id: int, observation: RateObservation, loaded_at: datetime) -> bool:
+        """Store a validated rate. Returns False (and changes nothing) if its external_key is already stored."""
+        ...
+
+    def current_posted_pay(self) -> Sequence[PostedPay]: ...
 
     def query(self, sql: str, params: Sequence[Any] = ()) -> QueryResult: ...
 

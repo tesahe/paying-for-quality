@@ -13,6 +13,8 @@ class IssueCode(str, Enum):
     RANGE_INVERTED = "RANGE_INVERTED"
     UNIT_UNKNOWN = "UNIT_UNKNOWN"
     EVIDENCE_NOT_FOUND = "EVIDENCE_NOT_FOUND"
+    CITATION_MISSING = "CITATION_MISSING"
+    VOCAB_UNKNOWN = "VOCAB_UNKNOWN"
     # Needs a human look.
     LOW_CONFIDENCE = "LOW_CONFIDENCE"
     OUT_OF_BAND = "OUT_OF_BAND"
@@ -28,6 +30,8 @@ REJECT_CODES = frozenset(
         IssueCode.RANGE_INVERTED,
         IssueCode.UNIT_UNKNOWN,
         IssueCode.EVIDENCE_NOT_FOUND,
+        IssueCode.CITATION_MISSING,
+        IssueCode.VOCAB_UNKNOWN,
     }
 )
 REVIEW_CODES = frozenset({IssueCode.LOW_CONFIDENCE, IssueCode.OUT_OF_BAND})
