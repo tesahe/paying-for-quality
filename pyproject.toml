@@ -5,9 +5,26 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "paying-for-quality"
 version = "0.1.0"
-description = "Price vs. value of expertise in the AI human-data industry"
+description = "Price vs. value of expertise in the AI human-data industry (CIT 381 course project)"
 requires-python = ">=3.11"
-dependencies = []  # TBD: each dependency is justified in docs/architecture.md
+dependencies = []  # Core and the SQLite path use the standard library only; see docs/architecture.md
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]               # test runner
+postgres = ["psycopg[binary]>=3.2"]  # Supabase Postgres adapter (stdlib cannot talk to Postgres)
+
+[project.scripts]
+pfq = "paying_for_quality.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+paying_for_quality = ["queries/*.sql", "schema/*.sql"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-m 'not supabase'"
+markers = [
+    "supabase: needs PFQ_TEST_DATABASE_URL and network; run with `pytest -m supabase`",
+]

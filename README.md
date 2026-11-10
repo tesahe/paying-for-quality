@@ -25,7 +25,14 @@ The economics: efficiency-wage theory says firms overpay when quality is hard to
 
 ## Current Sprint Status
 
-**Sprint 1 — Define and Establish (in progress).** Baseline files are set up. First drafts of the requirements, architecture and persistence plan are written. Decisions: Supabase (Postgres) is the database and pytest is the test runner. Next: the source and dataset census, then the first Core behavior (pay normalization) with a test. No feature code yet.
+**Sprint 2: Narrow Working System (in progress).** The market pipeline works end to end on Supabase:
+- `pfq collect` pulls public postings (Ashby: Mercor, Handshake).
+- `pfq extract` runs a deterministic baseline extractor through Core validation. A pay figure counts only if it is quoted in the posting.
+- `pfq query` reports median hourly pay and pay transparency.
+
+The real run collected 163 postings: 160 accepted, 2 sent to review and 1 rejected. `pytest` shows 89 passing with no credentials, plus 25 passing against Supabase.
+
+Next (Sprint 3): LLM extraction measured against about 100 hand-labeled postings, and a terms review of the expert-gig platforms.
 
 Details: [`docs/sprint-status.md`](docs/sprint-status.md).
 
@@ -44,15 +51,35 @@ What is committed for the class versus kept as Exploration Zone is defined in [`
 
 ## Setup
 
-TBD — added once the first code lands in Sprint 1. Python 3.11+.
+Python 3.11+ (developed on 3.13).
 
 ```bash
-cp .env.example .env   # fill in local values; never commit .env
+python3.13 -m venv .venv
+.venv/bin/pip install -e ".[dev,postgres]"
+.venv/bin/pytest                 # runs with no .env, network or database
+cp .env.example .env             # then set DATABASE_URL (Supabase session-pooler URI); never commit .env
+```
+
+To try the tool without Supabase, set `DATABASE_URL=sqlite:///./pfq.db` in `.env`.
+
+## Run
+
+```bash
+.venv/bin/pfq init-db                          # create the schema
+.venv/bin/pfq sources                          # registered sources and whether they may be collected
+.venv/bin/pfq collect --source ashby-mercor    # one request to a public job-board API
+.venv/bin/pfq extract                          # baseline extractor + Core validation
+.venv/bin/pfq query pay_by_domain              # or pay_transparency; add --json
+.venv/bin/pytest -m supabase                   # optional: tests against Supabase (needs PFQ_TEST_DATABASE_URL)
 ```
 
 ## Dependencies
 
-TBD. Every dependency will be justified in [`docs/architecture.md`](docs/architecture.md).
+Each is justified in [`docs/architecture.md`](docs/architecture.md#dependencies).
+- `psycopg[binary]`: the Postgres driver for Supabase.
+- `pytest`: tests.
+
+Core, the SQLite path, HTTP and `.env` loading use only the standard library.
 
 ## Data and Ethics
 
@@ -68,6 +95,9 @@ Public postings and public datasets only. No content from private contract work.
 
 ## Known Limitations
 
-- Nothing is implemented yet.
+- **Staff roles only so far.** Public job-board APIs list the companies' own employees. Expert contractor gigs are on platform sites that are blocked until their terms are reviewed.
+- **No LLM extraction yet.** The baseline extractor uses structured compensation or a regex, and department stands in for domain.
+- Non-USD pay is kept but excluded from hourly figures. Validation thresholds are provisional.
+- The quality side (rater agreement, LLM judges) is not started.
 - The market time series starts only when collection starts; history before that depends on archived pages (TBD).
 - No human raters are recruited; the quality side uses public datasets.
