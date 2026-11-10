@@ -2,7 +2,7 @@
 
 ## Sprint 2: Narrow Working System
 
-**Branch:** `sprint-2` · **Status:** in progress (implementation and docs done; demo recording and merge pending)
+**Branch:** `sprint-2` · **Status:** complete (merged into `main` in `ed7247f`, branch kept). The recorded demo has not been made yet.
 
 ### Working now
 
