@@ -8,10 +8,11 @@ This file serves as the canonical AI and developer instruction guide for the pro
 ## 1. Core Operating Principles
 
 1. **Academic Context:** This is a CIT 381 course project. All work must align with course specifications, grading rubrics, and clean software architecture standards.
-2. **Single-Agent Development Workflow:**
-   - Operate strictly within a single-agent development workflow.
-   - Do not trigger parallel or multi-agent background processes unless specifically directed.
-   - Keep interactions structured, linear, and focused on current task deliverables.
+2. **Agent Workflow (subagents allowed):**
+   - Subagents may be used for research, review and independent work (e.g. fresh-context "goldfish" reviews, parallel checks of separate docs).
+   - The main session owns the result: it reviews subagent output before acting on it, and subagents follow every rule in this file.
+   - Subagents do not commit, merge, push, or edit canonical docs directly; they report, and the main session applies agreed changes.
+   - Keep work focused on the current task deliverables.
 3. **Secrets & Security:**
    - **Never** expose, print, log, commit, or request secrets, API keys, tokens, or private credentials.
    - Strictly keep secrets in `.env` and verify they are omitted from git tracking.
@@ -70,5 +71,53 @@ This file serves as the canonical AI and developer instruction guide for the pro
 - **Branches:** one branch per sprint (`sprint-1`, `sprint-2`, …). Each sprint branch is merged into `main` and **kept** after merging.
 - **Do not merge or push** unless the owner explicitly says to in that request.
 - **Commit prefixes:** `feat:`, `fix:`, `test:`, `docs:`, `refactor:`, `chore:`, `merge:`. 
-- **Canonical documents only:** `README.md`, `docs/requirements.md`, `docs/architecture.md`, `docs/sprint-status.md`, `docs/ai-usage.md`. Do not create other progress or reflection documents (no `manual-verification.md`, no `ai-implementation-review.md`).
+- **Canonical documents only:** `README.md`, `docs/requirements.md`, `docs/architecture.md`, `docs/sprint-status.md`, `docs/ai-usage.md`. Do not create other progress or reflection documents (no `manual-verification.md`, no `ai-implementation-review.md`). Working files (drift reports, EGM briefs, drafts and review reports) live in `planning/`, which is git-ignored; see §6.
 - **Course instructions** are kept locally in `class-instructions/` (git-ignored) and are the source of truth for sprint requirements.
+
+---
+
+## 6. Documentation Alignment (adapted from the Elephant-Goldfish Model)
+
+The docs must describe the code as it is. This section borrows EGM's drift detection and fresh-eyes review and makes them a routine part of every sprint.
+
+### Two kinds of documents
+
+| Kind | Files | Expected change |
+|---|---|---|
+| **Foundational** | `docs/architecture.md` (layers, ports, data model, boundary), `docs/requirements.md` (FRs, constraints, acceptance criteria) | Rarely. A change needs a stated reason, recorded under "What Changed This Sprint" |
+| **Sprint** | `README.md` Current Sprint Status, `docs/sprint-status.md`, `docs/ai-usage.md`, requirement status columns | Every sprint |
+
+Docs name concrete file paths, modules, commands, tables and issue codes, so drift is checkable. When a doc describes something without a path, add the path.
+
+### Drift check (run without being asked)
+
+**When:** before any sprint merge to `main`; after a series of commits touching `core/`, `app/`, `adapters/`, `schema/`, `queries/` or `cli.py`; and whenever docs are being updated.
+
+**How:**
+1. **List the claims.** For each canonical doc, list its concrete claims: paths, modules, functions, tables and columns, CLI commands and flags, issue codes, constants and thresholds, dependencies, test command and counts, sprint status.
+2. **Verify against the current source.** Read the files and run the documented test command; never rely on memory. Use the observed result.
+3. **Report only the differences,** in these categories:
+   - **Missing:** the doc describes it; the code lacks it.
+   - **Undocumented:** the code has it; no doc mentions it.
+   - **Model mismatch:** tables, columns, dataclass fields or enums differ.
+   - **Shortcut:** a hard-coded value where the doc says configurable or TBD.
+   - **Architectural divergence:** a different pattern, library or file location than documented.
+   - **Stale status:** wrong counts, test results or sprint state.
+4. **Write the report** to `planning/drift/YYYY-MM-DD_DRIFT_REPORT.md` (git-ignored), one `## <doc>` heading per doc with bullets, or "No drift detected".
+5. **Resolve each item:**
+   - Sprint docs: fix directly.
+   - Foundational docs or code: propose the change and ask the owner which side is wrong. Never quietly change code to match a doc, or a foundational doc to match code.
+6. **Goldfish pass** (at sprint end): a fresh subagent with no conversation context reads only the docs and the code, repeats steps 1–3, and also flags anything a new reader could not understand without the chat history. Merge its findings into the report.
+
+The owner can also run `/egm:egm-drift-report` directly. Point its output at `planning/drift/`.
+
+### Planning and solidifying docs with EGM (owner-invoked)
+
+- **`/egm:egm-brainstorm`**: test a feature or a doc direction against what is already built; brief goes to `planning/`.
+- **`/egm:egm-draft`**: draft the design; draft goes to `planning/`.
+- **`/egm:egm-review`** and **`/egm:egm-review-loop`**: fresh-reviewer critique of a draft or a canonical doc.
+- **`/egm:egm-resolve`**: decide each finding.
+- **Rules:**
+  - All EGM output is written to `planning/`, never to the repo root or `docs/designs/`. Agreed content is then folded into the canonical docs.
+  - Accepted or rejected review findings are good evidence for the sprint's entry in `docs/ai-usage.md`.
+  - **Never run `/egm:egm-bootstrap`**: per-folder READMEs break the canonical-documents rule.
