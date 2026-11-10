@@ -1,8 +1,11 @@
 # Source registry. `pfq collect` refuses any source with terms_checked = false (AC-1.3).
 # Census method and findings: docs/architecture.md, "Data Sources". Re-run: scripts/source_census.py
 #
+# Rule (AGENTS.md section 4): postings come only from public job-board APIs (Ashby, Greenhouse), never from
+# a company's own website or work platform.
+#
 # segment: "staff"  = the company's own employee roles (salaried; public job-board APIs)
-#          "expert" = contractor expert gigs (company platform sites; not yet terms-checked)
+#          "expert" = contractor expert gigs (company platform sites: not collected, see mercor-platform)
 
 [[source]]
 slug = "ashby-mercor"
@@ -42,4 +45,42 @@ company = "Mercor"
 segment = "expert"
 terms_checked = false
 robots_checked_at = "2026-11-09"
-terms_note = "robots.txt allows / but disallows /api/ (listings likely load from it). Terms of service not yet read. Sprint 3."
+terms_note = "Not collected, by decision: a company work platform, not a public job board. Terms read 2026-11-09: mercor.com/terms section 2.2(b), (c), (e) prohibit scrapers and automated or non-automated copying. robots.txt allows / but disallows /api/."
+
+# --- Rate sources (FR-9): every pay figure enters through `pfq rates load` and Core validation -----------
+# kind: "cited" (data/rates.toml), "bls_oews" (BLS Public Data API), "job_boards" (accepted postings above)
+
+[[rate_source]]
+slug = "cited-rates"
+kind = "cited"
+provenance_kind = "literature"  # registry default; each entry in the file states its own kind
+terms_checked = true
+checked_at = "2026-11-09"
+terms_note = "Hand-made file of published figures (papers, published requester guidance). Each entry cites its source, retrieval date and license; no company job sites, no contract-work knowledge."
+path = "data/rates.toml"
+
+[[rate_source]]
+slug = "bls-oews"
+kind = "bls_oews"
+provenance_kind = "gov_statistic"
+terms_checked = true
+checked_at = "2026-11-09"
+terms_note = "bls.gov/developers/termsOfService.htm (modified 2023-08-30): no end-use controls; cite the retrieval date and state that BLS.gov cannot vouch for derived analyses (done in each citation_note). BLS material is public domain (bls.gov/bls/linksite.htm). v1 API, no key: 25 queries/day; one run uses one query per occupation."
+occupations = [
+  { soc = "15-1252", domain = "coding", title = "Software Developers" },
+  { soc = "15-2021", domain = "math", title = "Mathematicians" },
+  { soc = "19-2012", domain = "stem_science", title = "Physicists" },
+  { soc = "29-1210", domain = "medicine", title = "Physicians" },
+  { soc = "23-1011", domain = "law", title = "Lawyers" },
+  { soc = "13-2051", domain = "finance", title = "Financial and Investment Analysts" },
+  { soc = "27-3043", domain = "writing_humanities", title = "Writers and Authors" },
+  { soc = "27-3091", domain = "languages", title = "Interpreters and Translators" },
+]
+
+[[rate_source]]
+slug = "job-boards"
+kind = "job_boards"
+provenance_kind = "job_board"
+terms_checked = true
+checked_at = "2026-11-09"
+terms_note = "Derived from already-collected, Core-accepted postings of the terms-checked job-board sources above. No new requests. Published as aggregates only (no company column)."

@@ -10,11 +10,17 @@ hourly USD, so quotes that cannot be normalized are rejected rather than kept wi
 
 from __future__ import annotations
 
+from decimal import Decimal
+
 from .entities import PayQuoteCandidate, RateCandidate, RateObservation, RateValidation
 from .errors import Issue, IssueCode
 from .pay import normalize_pay_quote
-from .validation import DEFAULT_POLICY, ValidationPolicy
+from .validation import ValidationPolicy
 from .vocab import DOMAINS, Engagement, ProvenanceKind, RaterKind
+
+# Rates use a lower floor than postings: published crowd wages (e.g. a ~$2/h median on Mechanical Turk)
+# are real figures, not extraction errors. The ceiling still catches unit mistakes ($2M "per hour").
+RATE_POLICY = ValidationPolicy(hourly_floor_usd=Decimal(1), hourly_ceiling_usd=Decimal(500))
 
 _ENGAGEMENTS = frozenset(e.value for e in Engagement)
 _RATER_KINDS = frozenset(k.value for k in RaterKind)
@@ -45,7 +51,7 @@ def _citation_issue(candidate: RateCandidate) -> Issue | None:
     return None
 
 
-def validate_rate(candidate: RateCandidate, policy: ValidationPolicy = DEFAULT_POLICY) -> RateValidation:
+def validate_rate(candidate: RateCandidate, policy: ValidationPolicy = RATE_POLICY) -> RateValidation:
     issues: list[Issue] = []
     if not (candidate.external_key or "").strip():
         issues.append(Issue(IssueCode.MISSING_FIELD, "external_key"))

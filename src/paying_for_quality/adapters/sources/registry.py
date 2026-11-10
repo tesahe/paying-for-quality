@@ -5,7 +5,7 @@ from __future__ import annotations
 import tomllib
 from pathlib import Path
 
-from ...core.entities import SourceInfo
+from ...core.entities import RateSourceInfo, SourceInfo
 from ...core.errors import ConfigError
 from ...core.ports import PostingSource
 
@@ -35,3 +35,27 @@ def build_source(info: SourceInfo) -> PostingSource:
 
         return AshbySource(info.board, info.company)
     raise ConfigError(f"no collector for source kind '{info.kind}' yet")
+
+
+_RATE_KEYS = {"slug", "kind", "provenance_kind", "terms_checked", "checked_at", "terms_note"}
+
+
+def load_rate_registry(path: str | Path) -> dict[str, RateSourceInfo]:
+    """The `[[rate_source]]` entries. Keys beyond the common ones are adapter options (e.g. `path`)."""
+    path = Path(path)
+    if not path.is_file():
+        raise ConfigError(f"source registry not found: {path}")
+    try:
+        entries = tomllib.loads(path.read_text()).get("rate_source", [])
+        sources = [
+            RateSourceInfo(
+                slug=e["slug"], kind=e["kind"], provenance_kind=e["provenance_kind"],
+                terms_checked=bool(e["terms_checked"]), checked_at=e.get("checked_at"),
+                terms_note=e.get("terms_note", ""),
+                options={k: v for k, v in e.items() if k not in _RATE_KEYS},
+            )
+            for e in entries
+        ]
+    except (tomllib.TOMLDecodeError, KeyError) as exc:
+        raise ConfigError(f"invalid source registry {path}: {exc}") from None
+    return {s.slug: s for s in sources}

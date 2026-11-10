@@ -17,12 +17,15 @@ from typing import Any, Sequence
 
 from .adapters.llm.baseline import BaselineExtractor
 from .adapters.llm.fake import FakeExtractor
+from .adapters.rates.bls import BlsOewsRates
+from .adapters.rates.cited import CitedRates
 from .adapters.sources import registry
 from .adapters.storage import open_repository
 from .adapters.storage.raw_store import FileRawStore
-from .app import market, reporting
+from .app import market, rates, reporting
 from .core.errors import ConfigError, PfqError, SourceNotAllowed
-from .core.ports import QueryResult
+from .core.entities import RateSourceInfo
+from .core.ports import QueryResult, RateSource
 
 EXTRACTORS = {"baseline": BaselineExtractor, "fake": FakeExtractor}
 
@@ -93,9 +96,14 @@ def cmd_init_db(args, cfg) -> int:
 
 
 def cmd_sources(args, cfg) -> int:
+    print("Posting sources:")
     for info in registry.load_registry(args.registry).values():
-        status = "ready" if info.terms_checked else "blocked (terms not checked)"
-        print(f"{info.slug:<22} {info.kind:<11} {info.segment:<7} {status}")
+        status = "ready" if info.terms_checked else "blocked (terms not checked or not allowed)"
+        print(f"  {info.slug:<22} {info.kind:<11} {info.segment:<7} {status}")
+    print("Rate sources:")
+    for rate_info in registry.load_rate_registry(args.registry).values():
+        status = "ready" if rate_info.terms_checked else "blocked (terms not checked or not allowed)"
+        print(f"  {rate_info.slug:<22} {rate_info.kind:<11} {rate_info.provenance_kind:<14} {status}")
     return 0
 
 
@@ -127,6 +135,36 @@ def cmd_extract(args, cfg) -> int:
         repo.close()
     print(f"Extracted {result.total} postings with {result.extractor}: {result.accepted} accepted, "
           f"{result.review} sent to review, {result.rejected} rejected" + (f", {result.failed} failed" if result.failed else ""))
+    for code, count in result.issue_counts.most_common():
+        print(f"  {code}: {count}")
+    return 0
+
+
+def build_rate_source(info: RateSourceInfo, repo, cfg) -> RateSource:
+    """Composition root for rate sources: one adapter per registry `kind`."""
+    if info.kind == "cited":
+        return CitedRates(info.options.get("path", "data/rates.toml"))
+    if info.kind == "bls_oews":
+        return BlsOewsRates(info.options.get("occupations", []), retrieved_on=utc_now().date().isoformat())
+    if info.kind == "job_boards":
+        return rates.JobBoardRates(repo, FileRawStore(cfg.get("PFQ_RAW_DIR", "data/raw")))
+    raise ConfigError(f"no adapter for rate source kind '{info.kind}'")
+
+
+def cmd_rates_load(args, cfg) -> int:
+    sources = registry.load_rate_registry(args.registry)
+    if args.source not in sources:
+        raise ConfigError(f"unknown rate source '{args.source}'. Known: {', '.join(sorted(sources))}")
+    info = sources[args.source]
+    if not info.terms_checked:  # before building an adapter or touching the network
+        raise SourceNotAllowed(f"rate source '{info.slug}' has not passed its terms check")
+    repo = open_repo(cfg)
+    try:
+        result = rates.load_rates(info, build_rate_source(info, repo, cfg), repo, utc_now)
+    finally:
+        repo.close()
+    print(f"{result.source}: {result.total} rates: {result.new} new, {result.unchanged} unchanged, "
+          f"{result.rejected} rejected")
     for code, count in result.issue_counts.most_common():
         print(f"  {code}: {count}")
     return 0
@@ -165,6 +203,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--extractor", choices=sorted(EXTRACTORS), default="baseline")
     p.add_argument("--limit", type=int, default=None)
     p.set_defaults(func=cmd_extract)
+
+    p = sub.add_parser("rates", help="pay rates from any source (cited figures, BLS wages, job boards)")
+    rates_sub = p.add_subparsers(dest="rates_command", required=True)
+    p = rates_sub.add_parser("load", help="load, validate and store rates from one registered rate source")
+    p.add_argument("--source", required=True)
+    p.add_argument("--registry", default="data/sources.toml")
+    p.set_defaults(func=cmd_rates_load)
 
     p = sub.add_parser("query", help=f"run a named analysis ({', '.join(reporting.available_queries())})")
     p.add_argument("name")
