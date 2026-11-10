@@ -40,7 +40,7 @@
 | FR-2 | `core/validation.py`, `app/market.py::extract`, `adapters/llm/baseline.py`, `adapters/llm/fake.py` | `tests/core/test_validation.py`, `tests/app/test_extract.py`, `tests/adapters/test_baseline_extractor.py` |
 | FR-3 | `core/pay.py` | `tests/core/test_pay.py` |
 | FR-4 | `queries/pay_by_domain.sql`, `queries/pay_transparency.sql`, `app/reporting.py` | `tests/app/test_queries.py` (SQLite, and Supabase with `-m supabase`) |
-| FR-9 | `core/rates.py`, `core/vocab.py`, `app/rates.py`, `adapters/rates/cited.py`, `adapters/rates/bls.py`, `queries/rates_by_domain.sql`, `data/rates.toml`, `data/sources.toml` (`[[rate_source]]`) | `tests/core/test_rates.py`, `tests/app/test_rates.py`, `tests/adapters/test_cited_rates.py`, `tests/adapters/test_bls.py`, `tests/test_cli.py` (rates) |
+| FR-9 | `core/rates.py`, `core/vocab.py`, `app/rates.py`, `adapters/rates/cited.py`, `adapters/rates/bls.py`, `adapters/sources/registry.py::load_rate_registry`, `cli.py::cmd_rates_load` / `build_rate_source`, `adapters/storage/sql_repository.py` (rate methods, `apply_schema`), `schema/migrations/*/002_rate_observation.sql`, `queries/rates_by_domain.sql`, `data/rates.toml`, `data/sources.toml` (`[[rate_source]]`) | `tests/core/test_rates.py`, `tests/app/test_rates.py`, `tests/adapters/test_cited_rates.py`, `tests/adapters/test_bls.py`, `tests/adapters/test_migrations.py` (AC-9.5), `tests/adapters/test_repository_contract.py` (rate storage), `tests/test_cli.py` (rates) |
 | DC-1 | `adapters/storage/*`, `schema/*.sql`, `schema/migrations/*/*.sql` | `tests/adapters/test_repository_contract.py`, `tests/adapters/test_schema_parity.py`, `tests/adapters/test_migrations.py` |
 | DC-2 | `core/` | `tests/core/test_core_purity.py` |
 | DC-4 | `adapters/storage/postgres_repository.py`, `cli.py` | `tests/test_cli.py::test_connection_error_never_shows_the_password` |
@@ -65,7 +65,7 @@
 - **One command per task.** Built: `pfq init-db`, `pfq sources`, `pfq collect`, `pfq extract`, `pfq rates load`, `pfq query`. Planned: `pfq review`, `pfq ingest`, `pfq evaluate`, `pfq report` (see `docs/architecture.md`).
 - **Every command ends with a summary of what happened:** counts (e.g. "42 new, 118 unchanged", "37 accepted, 3 rejected, 2 sent to review"), not silence.
 - **Errors say what went wrong and what to do next**, e.g. "DATABASE_URL is not set; copy .env.example to .env". There are no stack traces by default and no secret values in messages.
-- **Re-running a command is safe.** Collection, extraction and dataset loading are idempotent.
+- **Re-running a command is safe.** Collection, extraction, rate loading and (later) dataset loading are idempotent.
 - **No-key mode:** `pfq extract --extractor fake` (and the default deterministic `baseline` extractor) run the pipeline without an LLM, so a reviewer can try the tool without an API key.
 - **Machine-readable output:** `--json` on `query`, `evaluate` and `report`.
 - **Exit codes:** `0` success, `1` handled error, `2` usage error.
@@ -115,7 +115,7 @@ Given/When/Then. IDs map to requirements (AC-3.1 belongs to FR-3).
 
 **FR-9 Load pay rates** (Sprint 3; all six implemented and tested, see `docs/sprint-status.md`)
 - **AC-9.1** Given a cited-rates entry with no citation, when `pfq rates load` runs, then it is rejected with `CITATION_MISSING` and no row is written.
-- **AC-9.2** Given an annual government wage of $104,000 for an occupation mapped to `medicine`, then the stored rate is $50.00/h with `rater_kind = outside_option` and its citation.
+- **AC-9.2** Given an annual government wage of $104,000 for an occupation mapped to `medicine`, then the stored rate is $50.00/h with `rater_kind = outside_option` and its citation. (This is tested in Core. The BLS adapter itself requests hourly medians, so its live rates need no conversion.)
 - **AC-9.3** Given an accepted job-board posting with an hourly contract pay quote, when job-board rates are loaded, then exactly one rate exists with `engagement = contractor`, linked to its `raw_posting`. Loading again creates no duplicates.
 - **AC-9.4** Given rates from three provenance kinds in one domain, when `pfq query rates_by_domain` runs, then it reports the median hourly rate per domain and rater kind with `n` and the number of provenance kinds, and no company names.
 - **AC-9.5** Given a Sprint 2 (version 1) database, when `pfq init-db` runs, then the migrations bring it to version 2 with no data loss, and a second run is a no-op.

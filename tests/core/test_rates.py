@@ -32,7 +32,7 @@ def codes(result):
     return {issue.code for issue in result.issues}
 
 
-def test_annual_government_wage_becomes_hourly_with_its_citation():  # AC-S3.2
+def test_annual_government_wage_becomes_hourly_with_its_citation():  # AC-9.2
     result = validate_rate(cited())
     assert result.accepted
     obs = result.observation
@@ -42,7 +42,7 @@ def test_annual_government_wage_becomes_hourly_with_its_citation():  # AC-S3.2
 
 
 @pytest.mark.parametrize("url", [None, "", "   "])
-def test_hand_entered_rate_without_citation_is_rejected(url):  # AC-S3.1
+def test_hand_entered_rate_without_citation_is_rejected(url):  # AC-9.1
     result = validate_rate(cited(citation_url=url, provenance_kind="literature"))
     assert not result.accepted
     assert IssueCode.CITATION_MISSING in codes(result)

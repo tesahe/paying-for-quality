@@ -36,7 +36,7 @@ def rate(key, hourly, domain="medicine", rater_kind="expert", provenance="datase
     )
 
 
-def test_load_is_idempotent_and_rejects_uncited(repo, clock):  # AC-S3.1
+def test_load_is_idempotent_and_rejects_uncited(repo, clock):  # AC-9.1
     source = FakeRates([rate("a", 40), rate("b", 60), rate("uncited", 50, url=None)])
     first = load_rates(CITED, source, repo, clock)
     assert (first.new, first.unchanged, first.rejected) == (2, 0, 1)
@@ -46,7 +46,7 @@ def test_load_is_idempotent_and_rejects_uncited(repo, clock):  # AC-S3.1
     assert repo.count_rows("rate_observation") == 2
 
 
-def test_unchecked_rate_source_is_refused_before_any_fetch(repo, clock):  # AC-S3.6
+def test_unchecked_rate_source_is_refused_before_any_fetch(repo, clock):  # AC-9.6
     source = FakeRates([rate("a", 40)])
     with pytest.raises(SourceNotAllowed):
         load_rates(replace(CITED, terms_checked=False), source, repo, clock)
@@ -70,7 +70,7 @@ def collect_contract_posting(repo, raw_store, clock):
     extract(FakeExtractor(scripted), repo, raw_store, clock)
 
 
-def test_job_board_postings_become_rates_with_engagement(repo, raw_store, clock):  # AC-S3.3
+def test_job_board_postings_become_rates_with_engagement(repo, raw_store, clock):  # AC-9.3
     collect_contract_posting(repo, raw_store, clock)
     result = load_rates(JOBS, JobBoardRates(repo, raw_store), repo, clock)
     assert (result.new, result.rejected) == (2, 0)
@@ -88,7 +88,7 @@ def test_job_board_postings_become_rates_with_engagement(repo, raw_store, clock)
     assert (again.new, again.unchanged) == (0, 2)
 
 
-def test_rates_by_domain_aggregates_across_provenance_kinds(repo, clock):  # AC-S3.4
+def test_rates_by_domain_aggregates_across_provenance_kinds(repo, clock):  # AC-9.4
     source = FakeRates([
         rate("paper", 40, provenance="dataset_paper"),
         rate("gov", 60, rater_kind="expert", provenance="gov_statistic"),

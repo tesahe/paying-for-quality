@@ -1,4 +1,4 @@
-"""Schema migrations (AC-S3.5): an existing version-1 database is upgraded in place, without data loss."""
+"""Schema migrations (AC-9.5): an existing version-1 database is upgraded in place, without data loss."""
 
 import sqlite3
 

@@ -100,6 +100,7 @@ The course calls the project's central, testable logic its "Engineering Core"; t
    - Any reject code beats any review code.
 3. **Agreement and rater quality.** Cohen's kappa (two raters), Fleiss' kappa and Krippendorff's alpha (many raters, missing labels allowed), per-rater scorecards (agreement with leave-one-out consensus or with expert consensus), and ambiguous-item detection (low per-item agreement).
 4. **Rate validation** (`validate_rate`, `core/rates.py`). Turn a `RateCandidate` from any source into a `RateObservation` or a rejection. There is no review queue for rates.
+   - **Key** (`MISSING_FIELD`). Every rate needs a non-empty `external_key`, which makes loading idempotent.
    - **Vocabulary** (`VOCAB_UNKNOWN`). `domain`, `engagement`, `rater_kind` and `provenance_kind` must come from `core/vocab.py`. The schema's CHECK constraints list the same values (tested).
    - **Citation** (`CITATION_MISSING`). A job-board rate must link to its `raw_posting`; every other rate must cite a public source URL.
    - **Pay.** It reuses `normalize_pay_quote`. A rate that is not clean hourly USD is rejected (`UNIT_NOT_NORMALIZABLE`, `CURRENCY_UNSUPPORTED`, `AMOUNT_INVALID`, ...), because the table must hold comparable hourly figures.
@@ -118,7 +119,7 @@ Ports are `typing.Protocol` classes in `core/ports.py`. Use cases depend on thes
 | `Extractor` ✓   | `extract(doc: RawPostingDoc) -> ExtractionCandidate`; `name`, `prompt_version` | `BaselineExtractor` (deterministic: structured compensation, else a pay regex). LLM client in S4 | `FakeExtractor`: scripted candidates, including invented pay and exceptions |
 | `RateSource` ✓  | `list_rates() -> Iterable[RateCandidate]`                    | `CitedRates` (`data/rates.toml`), `BlsOewsRates` (BLS API), `JobBoardRates` (accepted postings; in `app/rates.py` because it reads the repository) | `FakeRates` in `tests/app/test_rates.py`; a fake fetch for BLS |
 | `RawStore` ✓    | `put(slug, digest, bytes) -> path`; `get(path) -> bytes`     | `FileRawStore`: `data/raw/<source>/<sha256>.json`                                      | The same class on a temp folder                  |
-| `Repository` ✓  | `apply_schema` (base schema + migrations), `upsert_source`, collection-run bookkeeping, `find_raw_posting` / `has_listing` / `insert_raw_posting` / `touch_raw_posting`, `pending_extraction`, `record_extraction`, `upsert_rate_source`, `insert_rate`, `current_posted_pay`, `query`, `count_rows`, `close` | `PostgresRepository` (Supabase); `SqliteRepository` (local) | Temporary SQLite file                            |
+| `Repository` ✓  | `apply_schema` (base schema + migrations; returns the versions applied), `schema_version`, `upsert_source`, collection-run bookkeeping, `find_raw_posting` / `has_listing` / `insert_raw_posting` / `touch_raw_posting`, `pending_extraction`, `record_extraction`, `upsert_rate_source`, `insert_rate`, `current_posted_pay`, `query`, `count_rows`, `close` | `PostgresRepository` (Supabase); `SqliteRepository` (local) | Temporary SQLite file                            |
 | `Judge`         | `score(item: Item, rubric: Rubric) -> JudgeCandidate`        | LLM client (provider **TBD**), S5                                                      | Returns scripted scores                         |
 | `DatasetLoader` | `load() -> DatasetBundle` (dataset, items, raters, labels)   | One per public dataset (SummEval first), S4                                            | Small hand-made bundle                          |
 
@@ -131,7 +132,7 @@ The primary boundary is **CLI → use cases**. Each command builds a small reque
 What crosses the boundary:
 
 - **In:** the use case's arguments: a `SourceInfo` from the registry, port implementations built from config, and options such as `limit`. Request objects can be added if the argument lists grow.
-- **Out:** plain result dataclasses: `CollectResult` (new / changed / unchanged), `ExtractResult` (accepted / review / rejected / failed, issue-code counts) and `QueryResult` (columns, rows). The CLI formats these as text tables or JSON (`--json`).
+- **Out:** plain result dataclasses: `CollectResult` (new / changed / unchanged), `ExtractResult` (accepted / review / rejected / failed, issue-code counts), `LoadRatesResult` (new / unchanged / rejected, issue-code counts) and `QueryResult` (columns, rows). The CLI formats these as text tables or JSON (`--json`).
 - **Errors:** domain and validation errors are returned as data or raised as typed exceptions from `core/errors.py`; the CLI maps them to messages and exit codes. Stack traces are not shown to the user by default.
 
 Why it is useful: the same use cases can later sit behind a web UI or a scheduled job without change; tests can call use cases directly with fakes; and the CLI is thin enough to test with a few smoke tests.
@@ -244,7 +245,7 @@ Neither provider prohibits or invites third-party use. Collection therefore stay
 - **Backup:** Greenhouse, for Scale AI. Pay appears in the description text only.
 - **Sprint 3 decision: no company websites or work platforms.** Their terms forbid collection (above), and this public project takes nothing from these companies' own work (`AGENTS.md` §4.7). Expert pay comes instead from:
   - **contract roles that already appear on the public job boards**: `engagement` is read from each posting's structured employment type (e.g. Handshake's contract "AI Red Teamer" roles at $65–158/h);
-  - **cited published figures** (`data/rates.toml`): papers that state their raters' pay (SummEval, MT-Bench, GPQA), and Prolific's researcher guidance;
+  - **cited published figures** (`data/rates.toml`): papers that state their raters' pay (SummEval, MT-Bench, GPQA), a Mechanical Turk earnings study (Hara et al. 2018), and Prolific's researcher guidance;
   - **BLS OEWS hourly medians** for 8 expert occupations, as the outside option.
 
 The registry lives in `data/sources.toml`. A source with `terms_checked = false` cannot be collected.
@@ -340,6 +341,8 @@ Metrics are recomputed rather than stored so that they always match the current 
 | Repository + queries | One `repo` fixture runs the repository contract, use-case and query tests on a temporary SQLite file by default, and **also on Supabase Postgres** with `pytest -m supabase` (each run in a throwaway `pfq_test_<random>` schema, dropped afterwards) | SQLite: no. Postgres: yes (opt-in) |
 | Schema parity   | Test that `postgres.sql` and `sqlite.sql` declare the same tables and columns, and that RLS is enabled on every Postgres table | No                        |
 | Source adapter  | `AshbySource` against a small hand-made response in the documented shape (no real data committed)                  | No                        |
+| Rate model (S3) | `validate_rate` cases in `tests/core/test_rates.py`. `load_rates` and `JobBoardRates` in `tests/app/test_rates.py`, on the `repo` fixture so they also run on Supabase. `CitedRates` against the committed `data/rates.toml`; `BlsOewsRates` against the live response shape with a fake fetch. `pfq rates load` CLI tests | No |
+| Migrations (S3) | `tests/adapters/test_migrations.py`: a version-1 database is upgraded with its data kept and ends up identical to a fresh one; a re-run is a no-op; a broken migration leaves version 1. `test_schema_parity.py`: matching migration numbers, and the CHECK vocabularies equal Core's | No |
 | CLI             | Smoke tests calling `main(argv)` with a fake fetch: the full collect → extract → query path, exit codes, and a check that error messages never show the password | No                        |
 | Real LLM / HTTP | Manual or opt-in runs only, recorded in `docs/sprint-status.md`                                                   | Yes                       |
 
