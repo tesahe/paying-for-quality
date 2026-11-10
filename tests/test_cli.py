@@ -122,3 +122,79 @@ def test_usage_error_exit_code(capsys):
     with pytest.raises(SystemExit) as exc:
         cli.main(["collect"])  # --source is required
     assert exc.value.code == 2
+
+
+RATES_REGISTRY = """
+[[rate_source]]
+slug = "cited-rates"
+kind = "cited"
+provenance_kind = "literature"
+terms_checked = true
+path = "rates.toml"
+
+[[rate_source]]
+slug = "bls-oews"
+kind = "bls_oews"
+provenance_kind = "gov_statistic"
+terms_checked = false
+occupations = [{ soc = "15-1252", domain = "coding" }]
+
+[[rate_source]]
+slug = "job-boards"
+kind = "job_boards"
+provenance_kind = "job_board"
+terms_checked = true
+"""
+
+RATES = """
+[[rate]]
+id = "mtbench"
+amount = 35
+unit = "hour"
+engagement = "contractor"
+rater_kind = "expert"
+domain = "reasoning_general"
+provenance_kind = "dataset_paper"
+citation_url = "https://arxiv.org/abs/2306.05685"
+citation_note = "around $35"
+
+[[rate]]
+id = "uncited"
+amount = 12
+unit = "hour"
+rater_kind = "crowd"
+provenance_kind = "literature"
+"""
+
+
+def test_rates_load_and_query(env, tmp_path, capsys):
+    (tmp_path / "sources.toml").write_text(REGISTRY + RATES_REGISTRY)
+    (tmp_path / "rates.toml").write_text(RATES)
+    _, out, _ = run(capsys, "init-db")
+    assert "version 2" in out
+
+    code, out, _ = run(capsys, "rates", "load", "--source", "cited-rates", "--registry", "sources.toml")
+    assert code == 0 and "2 rates: 1 new, 0 unchanged, 1 rejected" in out and "CITATION_MISSING: 1" in out
+
+    run(capsys, "collect", "--source", "ashby-acme", "--registry", "sources.toml")
+    run(capsys, "extract")
+    code, out, _ = run(capsys, "rates", "load", "--source", "job-boards", "--registry", "sources.toml")
+    assert code == 0 and "rejected" in out
+
+    code, out, _ = run(capsys, "query", "rates_by_domain", "--json")
+    rows = json.loads(out)
+    assert {"domain": "reasoning_general", "rater_kind": "expert", "n": 1, "n_provenance": 1,
+            "median_hourly_usd": 35.0} in rows
+    assert all("company" not in row for row in rows)
+
+
+def test_blocked_rate_source_is_refused(env, tmp_path, capsys):
+    (tmp_path / "sources.toml").write_text(REGISTRY + RATES_REGISTRY)
+    run(capsys, "init-db")
+    code, _, err = run(capsys, "rates", "load", "--source", "bls-oews", "--registry", "sources.toml")
+    assert code == 1 and "terms" in err
+    code, _, err = run(capsys, "rates", "load", "--source", "nope", "--registry", "sources.toml")
+    assert code == 1 and "unknown rate source" in err
+
+    code, out, _ = run(capsys, "sources", "--registry", "sources.toml")
+    assert code == 0 and "Rate sources:" in out and "bls-oews" in out

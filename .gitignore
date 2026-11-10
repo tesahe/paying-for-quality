@@ -31,7 +31,7 @@ coverage/
 .coverage
 *.egg-info/
 
-# Local database files (test/offline runs only; schemas live in data/schema/)
+# Local database files (test/offline runs only; schemas live in src/paying_for_quality/schema/)
 *.db
 *.sqlite
 *.sqlite3

@@ -48,7 +48,8 @@ This file serves as the canonical AI and developer instruction guide for the pro
 
 - **Project:** Paying for Quality — an analysis tool for the AI human-data industry (companies such as Mercor, Scale, Surge, Invisible that hire experts to produce AI training and evaluation data).
 - **Guiding question:** Is the pay premium for expertise (market side) justified by the quality difference experts produce (quality side), and do LLM judges change that trade-off?
-- **Market side:** collect public job postings → LLM extraction → Core validation and pay normalization → SQLite → pay analysis.
+- **Framing (Sprint 3): "Cost of Quality".** For a labeling job, which mix of experts, crowd raters and LLM judges reaches the quality needed at the lowest cost, and when is the expert premium worth paying?
+- **Price side:** pay rates from any source (public job-board APIs, official wage statistics, cited published figures) → Core validation and hourly normalization → one `rate_observation` table → aggregate analysis.
 - **Quality side:** load public multi-rater datasets → agreement and rater-quality metrics → LLM-judge comparison.
 - **Out of class scope:** the paid human-subject experiment, ethics (IRB) approval, and the research paper. The software should keep that experiment a configuration change, not a rebuild.
 - Scope details live in `README.md` and `docs/requirements.md`. Unsettled decisions are marked **TBD** there.
@@ -63,6 +64,9 @@ This file serves as the canonical AI and developer instruction guide for the pro
 4. **No contract-work content, ever.** Nothing from the owner's paid AI-training work (tasks, guidelines, rates, screenshots) may enter this repository. That work is under NDA.
 5. **Rater data is separable.** Any human rating data that is not from a public dataset is stored separately and is synthetic or self-generated unless the instructor approves otherwise.
 6. **Respect dataset licenses.** Record the license of every dataset used.
+7. **Job listings only from public job-board APIs.** Postings come only from the ATS feeds employers use to distribute jobs (e.g. Ashby, Greenhouse). Never collect from, or copy by hand from, a company's own website or work platform (e.g. work.mercor.com, alignerr.com), whatever its robots.txt says.
+8. **Aggregates only.** Public outputs built on job-board data show industry aggregates. No rankings or comparisons of named companies' pay. `rate_observation` deliberately has no company column.
+9. **Every hand-entered figure is cited.** Each entry in `data/rates.toml` names a public source (URL), the retrieval date and its license or terms. Figures the owner knows from contract work are never entered, even when a public source states the same number.
 
 ---
 

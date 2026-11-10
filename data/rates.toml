@@ -1,0 +1,102 @@
+# Cited pay rates (FR-9). Small, hand-made, committed. Loaded with: pfq rates load --source cited-rates
+#
+# Rules (AGENTS.md section 4):
+# - Every entry cites a public source (citation_url), its retrieval date and its license or terms.
+#   Core rejects an entry without a citation (CITATION_MISSING).
+# - Sources are papers, official statistics or guidance written for researchers. Never a company's own
+#   job site or work platform, and never anything from the owner's contract work.
+# - To record a changed figure, add a new entry with a new id. Loaded ids are never overwritten.
+#
+# Fields: id, amount (or amount_min/amount_max), unit, currency, engagement, rater_kind, domain,
+#         provenance_kind, region, as_of, citation_url, citation_note (quote; retrieved date; license).
+
+[[rate]]
+id = "prolific-minimum-2026"
+amount = 8
+unit = "hour"
+currency = "USD"
+engagement = "contractor"
+rater_kind = "crowd"
+domain = "none"
+provenance_kind = "literature"
+as_of = "2026-04"
+citation_url = "https://researcher-help.prolific.com/en/articles/445266-how-much-should-i-pay-participants"
+citation_note = "Prolific researcher help: 'We enforce a minimum hourly rate of £6 / $8, and recommend paying at least £9 / $12 per hour.' Platform minimum for study participants. Retrieved 2026-11-09. Help-centre content, no open license: cited, not copied."
+
+[[rate]]
+id = "prolific-recommended-2026"
+amount = 12
+unit = "hour"
+currency = "USD"
+engagement = "contractor"
+rater_kind = "crowd"
+domain = "none"
+provenance_kind = "literature"
+as_of = "2026-04"
+citation_url = "https://researcher-help.prolific.com/en/articles/445266-how-much-should-i-pay-participants"
+citation_note = "Prolific researcher help: 'recommend paying at least £9 / $12 per hour.' Recommended floor, not a market wage. Retrieved 2026-11-09. Help-centre content, no open license."
+
+[[rate]]
+id = "hara2018-mturk-median"
+amount = 2
+unit = "hour"
+currency = "USD"
+engagement = "contractor"
+rater_kind = "crowd"
+domain = "none"
+provenance_kind = "literature"
+as_of = "2017-12"
+citation_url = "https://arxiv.org/abs/1712.05796"
+citation_note = "Hara et al., CHI 2018: 'workers earned a median hourly wage of only ~$2/h, and only 4% earned more than $7.25/h.' Amazon Mechanical Turk, all task types. Retrieved 2026-11-09. arXiv non-exclusive distribution license 1.0."
+
+[[rate]]
+id = "hara2018-mturk-requester-average"
+amount = 11
+unit = "hour"
+currency = "USD"
+engagement = "contractor"
+rater_kind = "crowd"
+domain = "none"
+provenance_kind = "literature"
+as_of = "2017-12"
+citation_url = "https://arxiv.org/abs/1712.05796"
+citation_note = "Hara et al., CHI 2018: 'The average requester pays more than $11/h, although lower-paying requesters post much more work.' A lower bound ('more than'). Retrieved 2026-11-09. arXiv non-exclusive distribution license 1.0."
+
+[[rate]]
+id = "summeval-crowd"
+amount = 12
+unit = "hour"
+currency = "USD"
+engagement = "contractor"
+rater_kind = "crowd"
+domain = "writing_humanities"
+provenance_kind = "dataset_paper"
+as_of = "2021-02"
+citation_url = "https://arxiv.org/abs/2007.12626"
+citation_note = "Fabbri et al., SummEval, TACL 2021: 'Compensation was carefully calculated to ensure an average wage of 12 USD per hour.' Mechanical Turk crowd annotators of summaries; the paper gives no pay for its expert annotators. Retrieved 2026-11-09. arXiv non-exclusive distribution license 1.0."
+
+[[rate]]
+id = "mtbench-expert-judges"
+amount = 35
+unit = "hour"
+currency = "USD"
+engagement = "contractor"
+rater_kind = "expert"
+domain = "reasoning_general"
+provenance_kind = "dataset_paper"
+as_of = "2023-12"
+citation_url = "https://arxiv.org/abs/2306.05685"
+citation_note = "Zheng et al., MT-Bench, NeurIPS 2023 (Appendix C.1): 'We pay them $20 for judging 20 questions, which corresponds to an hourly rate of around $35.' 58 expert labelers, mostly graduate students. Retrieved 2026-11-09. arXiv non-exclusive distribution license 1.0."
+
+[[rate]]
+id = "gpqa-experts-average"
+amount = 95
+unit = "hour"
+currency = "USD"
+engagement = "contractor"
+rater_kind = "expert"
+domain = "stem_science"
+provenance_kind = "dataset_paper"
+as_of = "2023-11"
+citation_url = "https://arxiv.org/abs/2311.12022"
+citation_note = "Rein et al., GPQA, 2023: 'we estimate an average hourly payment of approximately $95 per hour. The maximum possible hourly rate given our time estimates is $150 per hour.' Authors' estimate; most pay is quality-dependent bonuses. Retrieved 2026-11-09. CC BY 4.0."

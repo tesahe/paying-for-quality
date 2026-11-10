@@ -98,3 +98,46 @@ def test_pending_extraction_only_latest_version_and_limit(repo):
 def test_count_rows_rejects_unknown_tables(repo):
     with pytest.raises(ValueError):
         repo.count_rows("source; DROP TABLE source")
+
+
+# --- rates (FR-9) ----------------------------------------------------------------------------
+from paying_for_quality.core.entities import RateCandidate, RateSourceInfo  # noqa: E402
+from paying_for_quality.core.rates import validate_rate  # noqa: E402
+
+RATE_SOURCE = RateSourceInfo("cited-rates", "cited", "literature", True, "2026-11-09", "test")
+
+
+def observation(key="mtbench-expert", hourly=35):
+    candidate = RateCandidate(
+        external_key=key, amount_min=hourly, amount_max=hourly, unit="hour", engagement="contractor",
+        rater_kind="expert", domain="reasoning_general", provenance_kind="dataset_paper",
+        citation_url="https://arxiv.org/abs/2306.05685", citation_note="around $35 per hour",
+    )
+    return validate_rate(candidate).observation
+
+
+def test_upsert_rate_source_keeps_one_row(repo):
+    first = repo.upsert_rate_source(RATE_SOURCE)
+    second = repo.upsert_rate_source(RateSourceInfo("cited-rates", "cited", "literature", False))
+    assert first == second
+    assert repo.count_rows("rate_source") == 1
+
+
+def test_insert_rate_is_idempotent_on_external_key(repo):
+    source_id = repo.upsert_rate_source(RATE_SOURCE)
+    assert repo.insert_rate(source_id, observation(), T0) is True
+    assert repo.insert_rate(source_id, observation(hourly=99), T0) is False  # same key: never overwritten
+    assert repo.insert_rate(source_id, observation(key="other"), T0) is True
+    rows = repo.query("SELECT external_key, hourly_min_usd FROM rate_observation ORDER BY external_key").rows
+    assert [(key, Decimal(str(value))) for key, value in rows] == [("mtbench-expert", Decimal(35)), ("other", Decimal(35))]
+
+
+def test_current_posted_pay_lists_only_current_accepted_hourly_quotes(repo):
+    source_id, raw_id = add_raw(repo)
+    repo.record_extraction(raw_id, "fake", "v0", T0, "{}", ValidationResult(Outcome.ACCEPTED, POSTING))
+    pay = repo.current_posted_pay()
+    assert [(p.raw_posting_id, p.quote_index, p.unit, p.title) for p in pay] == [(raw_id, 0, "year", "Data Lead")]
+
+    # A newer snapshot of the same listing with no accepted extraction hides the old one.
+    repo.insert_raw_posting(source_id, DOC, "hash-2", "test-board/hash-2.json", T0)
+    assert repo.current_posted_pay() == []

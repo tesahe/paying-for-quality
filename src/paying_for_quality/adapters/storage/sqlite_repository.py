@@ -27,6 +27,17 @@ class SqliteRepository(SqlRepository):
     def _num(self, value: Decimal | None) -> Any:
         return None if value is None else float(value)
 
-    def apply_schema(self) -> None:
+    def _apply_base_schema(self) -> None:
         self._conn.executescript(load_schema("sqlite"))
         self._conn.commit()
+
+    def _apply_migration(self, version: int, sql: str) -> None:
+        # executescript commits first and runs in autocommit, so wrap the script in its own transaction.
+        try:
+            self._conn.executescript(
+                f"BEGIN;\n{sql}\nUPDATE schema_version SET version = {int(version)};\nCOMMIT;"
+            )
+        except BaseException:
+            if self._conn.in_transaction:
+                self._conn.rollback()
+            raise
