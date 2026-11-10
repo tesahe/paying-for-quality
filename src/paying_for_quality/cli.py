@@ -81,10 +81,14 @@ def format_table(result: QueryResult) -> str:
 def cmd_init_db(args, cfg) -> int:
     repo = open_repo(cfg)
     try:
-        repo.apply_schema()
+        applied = repo.apply_schema()
+        version = repo.schema_version()
     finally:
         repo.close()
-    print("Schema is up to date.")
+    if applied:
+        print(f"Applied migration(s) {', '.join(map(str, applied))}; schema is at version {version}.")
+    else:
+        print(f"Schema is up to date (version {version}).")
     return 0
 
 

@@ -39,11 +39,16 @@ class PostgresRepository(SqlRepository):
     def _sql(self, sql: str) -> str:
         return super()._sql(sql).replace("?", "%s")
 
-    def apply_schema(self) -> None:
+    def _apply_base_schema(self) -> None:
         with self._transaction():
             self._conn.execute(f'CREATE SCHEMA IF NOT EXISTS "{self.schema}"')
             self._conn.execute(f'SET search_path TO "{self.schema}"')
             self._conn.execute(load_schema("postgres"))
+
+    def _apply_migration(self, version: int, sql: str) -> None:
+        with self._transaction():
+            self._conn.execute(sql)
+            self._conn.execute("UPDATE schema_version SET version = %s", (version,))
 
     def drop_schema(self) -> None:
         """Tests only: remove a throwaway schema."""

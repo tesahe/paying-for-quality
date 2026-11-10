@@ -13,18 +13,35 @@ from decimal import Decimal
 from importlib import resources
 from typing import Any, Iterator, Sequence
 
-from ...core.entities import Outcome, RawPostingDoc, SourceInfo, ValidationResult
-from ...core.ports import PendingRaw, QueryResult
+from ...core.entities import Outcome, RateObservation, RateSourceInfo, RawPostingDoc, SourceInfo, ValidationResult
+from ...core.ports import PendingRaw, PostedPay, QueryResult
 from ...core.serialization import issues_to_json
 
 TABLES = (
     "schema_version", "source", "collection_run", "raw_posting",
     "extraction_run", "posting", "pay_quote", "review_item",
+    "rate_source", "rate_observation",
 )
 
 
 def load_schema(dialect: str) -> str:
+    """The base schema (version 1). Later versions are added by the numbered migrations."""
     return resources.files("paying_for_quality.schema").joinpath(f"{dialect}.sql").read_text()
+
+
+def load_migrations(dialect: str) -> list[tuple[int, str]]:
+    """Numbered migrations (`NNN_name.sql`) for one dialect, in version order."""
+    folder = resources.files("paying_for_quality.schema").joinpath("migrations", dialect)
+    found = []
+    for item in folder.iterdir():
+        if item.name.endswith(".sql") and item.name[:3].isdigit():
+            found.append((int(item.name[:3]), item.read_text()))
+    return sorted(found)
+
+
+def full_schema(dialect: str) -> str:
+    """The schema a fresh database ends up with: the base schema plus every migration."""
+    return "\n".join([load_schema(dialect), *(sql for _, sql in load_migrations(dialect))])
 
 
 class SqlRepository:
@@ -62,6 +79,33 @@ class SqlRepository:
 
     def close(self) -> None:
         self._conn.close()
+
+    # --- schema and migrations -----------------------------------------------------------
+    def _apply_base_schema(self) -> None:
+        raise NotImplementedError
+
+    def _apply_migration(self, version: int, sql: str) -> None:
+        raise NotImplementedError
+
+    def schema_version(self) -> int:
+        row = self._execute("SELECT MAX(version) FROM schema_version").fetchone()
+        self._conn.commit()
+        return int(row[0] or 0)
+
+    def apply_schema(self) -> list[int]:
+        """Create the base schema if missing, then apply every migration newer than the stored version.
+
+        Each migration runs in one transaction together with its version bump, so a failure leaves the
+        database at the previous version. Returns the versions applied (empty when already up to date).
+        """
+        self._apply_base_schema()
+        current = self.schema_version()
+        applied = []
+        for version, sql in load_migrations(self.dialect):
+            if version > current:
+                self._apply_migration(version, sql)
+                applied.append(version)
+        return applied
 
     # --- sources and collection ----------------------------------------------------------
     def upsert_source(self, source: SourceInfo) -> int:
@@ -175,6 +219,69 @@ class SqlRepository:
             elif result.outcome is Outcome.REVIEW:
                 self._insert("INSERT INTO review_item (extraction_run_id, status) VALUES (?, 'open')", (run_id,))
             return run_id
+
+    # --- rates -------------------------------------------------------------------------------
+    def upsert_rate_source(self, info: RateSourceInfo) -> int:
+        with self._transaction():
+            row = self._execute("SELECT id FROM rate_source WHERE slug = ?", (info.slug,)).fetchone()
+            values = (info.kind, info.provenance_kind, info.terms_checked, info.checked_at, info.terms_note)
+            if row:
+                self._execute(
+                    "UPDATE rate_source SET kind = ?, provenance_kind = ?, terms_checked = ?, checked_at = ?,"
+                    " terms_note = ? WHERE id = ?",
+                    (*values, row[0]),
+                )
+                return int(row[0])
+            return self._insert(
+                "INSERT INTO rate_source (slug, kind, provenance_kind, terms_checked, checked_at, terms_note)"
+                " VALUES (?, ?, ?, ?, ?, ?)",
+                (info.slug, *values),
+            )
+
+    def insert_rate(self, rate_source_id: int, observation: RateObservation, loaded_at: datetime) -> bool:
+        """Idempotent on (rate_source_id, external_key): a stored rate is never overwritten."""
+        o = observation
+        with self._transaction():
+            exists = self._execute(
+                "SELECT 1 FROM rate_observation WHERE rate_source_id = ? AND external_key = ?",
+                (rate_source_id, o.external_key),
+            ).fetchone()
+            if exists:
+                return False
+            self._insert(
+                "INSERT INTO rate_observation (rate_source_id, external_key, amount_min, amount_max, currency, unit,"
+                " hourly_min_usd, hourly_max_usd, engagement, rater_kind, domain, provenance_kind, occupation,"
+                " region, as_of, citation_url, citation_note, raw_posting_id, loaded_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (rate_source_id, o.external_key, self._num(o.amount_min), self._num(o.amount_max), o.currency,
+                 o.unit.value, self._num(o.hourly_min_usd), self._num(o.hourly_max_usd), o.engagement, o.rater_kind,
+                 o.domain, o.provenance_kind, o.occupation, o.region, o.as_of, o.citation_url, o.citation_note,
+                 o.raw_posting_id, self._ts(loaded_at)),
+            )
+            return True
+
+    def current_posted_pay(self) -> list[PostedPay]:
+        """Hourly-normalizable USD pay quotes of current, Core-accepted postings (same "current" rule as
+        queries/pay_by_domain.sql: latest snapshot of each listing, latest accepted extraction of it)."""
+        rows = self._execute(
+            "SELECT rp.id, rp.raw_path, p.title, q.id, q.amount_min, q.amount_max, q.currency, q.unit"
+            " FROM posting p"
+            " JOIN raw_posting rp ON rp.id = p.raw_posting_id"
+            " JOIN pay_quote q ON q.posting_id = p.id"
+            " WHERE q.hourly_min_usd IS NOT NULL"
+            " AND rp.id = (SELECT MAX(r2.id) FROM raw_posting r2"
+            "              WHERE r2.source_id = rp.source_id AND r2.external_id = rp.external_id)"
+            " AND p.extraction_run_id = (SELECT MAX(p2.extraction_run_id) FROM posting p2"
+            "                            WHERE p2.raw_posting_id = p.raw_posting_id)"
+            " ORDER BY rp.id, q.id"
+        ).fetchall()
+        self._conn.commit()
+        result, index, last = [], 0, None
+        for raw_id, raw_path, title, _quote_id, amount_min, amount_max, currency, unit in rows:
+            index = index + 1 if raw_id == last else 0
+            last = raw_id
+            result.append(PostedPay(int(raw_id), raw_path, title, index, amount_min, amount_max, currency, unit))
+        return result
 
     # --- reads ---------------------------------------------------------------------------
     def query(self, sql: str, params: Sequence[Any] = ()) -> QueryResult:
