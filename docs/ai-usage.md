@@ -55,22 +55,25 @@ How I use AI tools on this project, what I keep, change or reject, and how AI-as
 
 ## Sprint 4 Log
 
+Sprint 4 follows the plan I set at the start of the project: **harden what exists** (errors, secrets, dependency justification, one bounded improvement), and **start the quality side** with SummEval-style agreement and expert vs. crowd. The LLM extractor and the review commands wait until Sprint 5, so this sprint stays on strengthening.
+
 | Area | What I had the AI do | My direction and decisions | Verification |
 |---|---|---|---|
-| Plan | Read the Sprint 4 assignment, the project plan and the Sprint 3 follow-ups, then propose one strengthening focus | I asked it to follow the original plan (hardening plus the first quality slice), commit along the way and leave pushing to me | The plan is the commit list on `sprint-4` |
-| Investigation | Reproduce the Sprint 3 "flaky Supabase run" follow-up | I approved restoring the paused Supabase project through the Supabase connector so the fix could be checked live | Redacted driver replies captured before and after the restore (`docs/sprint-status.md`) |
-| Quality slice | Krippendorff's alpha in Core, a SummEval reader and `pfq quality summeval` | I chose to build the reader on a hand-made fixture and not download SummEval yet, to keep Sprint 4 centered on the strengthening work | Alpha reproduces Krippendorff's published example (0.743 nominal, 0.849 interval) |
+| Plan | Turn my Sprint 4 plan and the Sprint 3 follow-ups into steps, matched to the Sprint 4 assignment | I set the order: database failure handling first (my strengthening focus), then the first quality slice, then docs. Commits along the way; I merge and push myself | The plan is the commit list on `sprint-4` |
+| Failure handling | Investigate the Sprint 3 follow-up (one Supabase test run failed with an unknown cause) and propose a fix | I chose to fix what the user sees and what the tests leave behind, not to hide failures behind retries | Offline tests, plus a live Supabase run (`docs/sprint-status.md`) |
+| Quality slice | Krippendorff's alpha in Core, a SummEval reader, `pfq quality summeval` | I chose alpha, because SummEval's scores are 1–5 ratings, and a reader tested on a hand-made fixture. I'll download the real file in Sprint 5 | Alpha reproduces Krippendorff's published example (0.743 nominal, 0.849 interval) |
 
 **Consequential AI contribution (database failure handling: what to retry, and what to say):**
-- **The question.** Sprint 3 left a follow-up: one Supabase test run had 11 setup errors with an unknown cause, and the suggested fix was "add connection retry or timeout handling".
-- **What the AI found.** Probing the database showed that the project had paused itself after 13 idle days. The pooler's reply to a paused project is `FATAL: (ENOTFOUND) tenant/user … not found`, after about 13–15 seconds. `pfq` turned every connect failure into "check DATABASE_URL in .env", which sends the user to the wrong place, and an error during a command printed only "unexpected OperationalError".
-- **What it recommended, and how that was evaluated.**
-  - *Blanket retry with backoff on every database call* (the obvious reading of the follow-up): **rejected.** A retry would not help a paused project or a wrong password; it would only multiply a 15-second wait. Replaying an operation after a dropped connection is unsafe, because the server has already rolled back the transaction and a multi-step command could be half-repeated. Since every load is idempotent, re-running the command is the safe recovery.
-  - *Retry the connect only, only for transient causes (timeout, no free slots), with a classified message for every failure*: **accepted** (`adapters/storage/db_errors.py`).
-  - *A retry library (tenacity)*: **rejected.** It is one retry site, and a library would make wrapping operations easy, which the design rules out.
-- **Where the AI's own change was wrong.** Its first fixture fix moved `apply_schema` inside the `try`, which assumed the orphan came from a failed setup. Once Supabase was back, the leftover schema `pfq_test_52d59e09` turned out to be **complete, at version 2**. The run had died after setup, so the first fix did not cover the observed case. A second fix drops the schema over a fresh connection when the old one is dead (`0b625a1`). Separately, a hand-computed expected correlation in a new test was wrong (0.9934, then 0.99432). The exact-fraction assertion failed and caught it; the right value is 0.99419.
+- **The question.** My Sprint 3 notes left a follow-up: one Supabase test run failed with 11 setup errors, and the suggested fix was "add connection retry or timeout handling". Before adding retries, I wanted to know what actually goes wrong.
+- **What the AI found.**
+  - Every connect failure produced the same message, "check DATABASE_URL in .env", whatever the cause. An error during a command printed only "unexpected OperationalError", with no cause and no next step.
+  - A dropped connection during a Supabase test left its throwaway schema in the real database. One, `pfq_test_52d59e09`, was still there from Sprint 3.
+- **What it recommended, and what I decided.**
+  - **Rejected:** a blanket retry with backoff on every database call. Retrying can't fix a wrong password or an unknown host; it only makes the user wait longer. Replaying a command after a dropped connection is unsafe: the server has already rolled back the transaction, so part of a multi-step command could run twice. Every load is idempotent, so re-running the whole command is the safe recovery.
+  - **Accepted:** retry only the connect, and only for causes that pass (timeout, no free connection slots). Every failure gets a message that names the cause and the next step and never shows the host or user (`adapters/storage/db_errors.py`).
+  - **Rejected:** a retry library (tenacity). It's one retry site, and a library would make it easy to wrap operations in retries, which my design rules out.
+- **Where the AI's first fix was wrong.** Its first fixture change assumed the leftover schema came from a failed setup. The leftover schema was complete, so the connection had died after setup. A live run then reproduced the problem: a connection dropped mid-test and left a second orphan, `pfq_test_0aaa009a`. I had it drop the schema over a fresh connection instead (`0b625a1`). After that change, the next full run left nothing behind. Separately, a hand-computed expected value in a new test was wrong; the test's exact-fraction check caught it.
 - **How it was verified.**
-  - 53 new offline test cases (186 in all, up from 133); the classifier is tested with the pooler's real reply text.
-  - A live `pfq init-db` against the paused project printed the new "probably paused: restore it" message.
-  - After the restore, the full Postgres suite and a live `pfq init-db` / `pfq query rates_by_domain` ran against Supabase (`docs/sprint-status.md`).
-- **Limitation.** The cause of the original Sprint 3 failure is still not proven. The leftover schema shows that the connection died after setup; the most likely cause is the session pooler dropping or refusing connections, but it was not reproduced.
+  - 53 new offline test cases (186 in all, up from 133). The classifier is tested with the pooler's real error text, with the host and user replaced.
+  - After the fix, the Supabase suite passed 32 of 32 and left no schema behind.
+- **Limitation.** The cause of the dropped connections on Supabase's session pooler is still unproven. They are now reported clearly and cleaned up, not prevented.
