@@ -27,17 +27,18 @@ The economics: efficiency-wage theory says firms overpay when quality is hard to
 
 ## Current Sprint Status
 
-**Sprint 4: Strengthen and Review (complete on `sprint-4`).** The strengthening work is **database failure handling**. Every connection failure used to give the same "check DATABASE_URL" message whatever the cause, and errors in the middle of a command showed only "unexpected OperationalError".
-- Every database error now ends in a handled message that names the likely cause and the next step, and never repeats the host or user (`adapters/storage/db_errors.py`).
-- Connecting is retried only for transient causes (timeout, no free slots). Operations are never replayed: the server has rolled them back, and every load is idempotent, so the message says to re-run.
-- The Supabase test fixture no longer leaves throwaway schemas behind when a connection dies (two such orphans were found).
-- First quality slice (original plan): Krippendorff's alpha in Core, which reproduces the published worked example, plus `pfq quality summeval` (expert vs. crowd per dimension; real file not downloaded yet).
+**Sprint 4: Strengthen and Review (complete).** The quality side of the project's question rests on **agreement math**: how consistently experts and crowd raters score, and how closely the two groups agree. Sprint 4 makes that math trustworthy before any real dataset runs through it.
+- **The right metric:** Krippendorff's alpha instead of the planned Fleiss' kappa. SummEval's 1–5 ratings come from 3 experts and 5 crowd raters per item; alpha weighs a disagreement by its size and handles missing ratings and groups of different sizes (`core/agreement.py`, standard library only).
+- **Verified against published values:** reproduces Krippendorff's worked example exactly (0.743 nominal, 0.849 interval), plus hand-computed cases.
+- **No misleading numbers:** undefined agreement is reported as blank, not as a crash or a fake 1.0. Off-scale or non-numeric dataset scores are rejected by Core, counted, and treated as missing, never guessed.
+- **`pfq quality summeval`:** expert alpha, crowd alpha, and expert vs. crowd correlation and gap per dimension, with no database needed.
+- **Also hardened:** database errors now name the cause and the next step without showing connection details. Only temporary connection failures are retried.
 
-Tests: `pytest` gives **186 passed** with no credentials (Sprint 3: 133); **32 passed** against Supabase on the final run (an earlier run hit a dropped connection; see `docs/sprint-status.md`).
+Tests: `pytest` gives **186 passed** with no credentials (Sprint 3: 133); **32 passed** against Supabase.
 
-Known limitation: the cause of the intermittent dropped connections on Supabase's pooler is still unproven. They are now reported clearly and cleaned up, not prevented.
+Known limitation: the real SummEval file is not downloaded yet, so there is no real expert-vs-crowd result yet (tested on a hand-made fixture).
 Peer feedback: not received (see `docs/sprint-status.md`).
-Next (Sprint 5): the LLM judge comparison, the real SummEval run, the LLM extractor and the first price-vs-value summary.
+Next (Sprint 5): the real SummEval run, an LLM-judge comparison, the LLM extractor and the first price-vs-value summary.
 
 Details: [`docs/sprint-status.md`](docs/sprint-status.md).
 

@@ -55,25 +55,29 @@ How I use AI tools on this project, what I keep, change or reject, and how AI-as
 
 ## Sprint 4 Log
 
-Sprint 4 follows the plan I set at the start of the project: **harden what exists** (errors, secrets, dependency justification, one bounded improvement), and **start the quality side** with SummEval-style agreement and expert vs. crowd. The LLM extractor and the review commands wait until Sprint 5, so this sprint stays on strengthening.
+Sprint 4 follows the plan I set at the start of the project: **harden what exists, and start the quality side** with SummEval-style agreement and expert vs. crowd. The quality side is half of the project's question, so the agreement math had to be trustworthy before any real data goes through it. The LLM extractor and the review commands wait until Sprint 5.
 
 | Area | What I had the AI do | My direction and decisions | Verification |
 |---|---|---|---|
-| Plan | Turn my Sprint 4 plan and the Sprint 3 follow-ups into steps, matched to the Sprint 4 assignment | I set the order: database failure handling first (my strengthening focus), then the first quality slice, then docs. Commits along the way; I merge and push myself | The plan is the commit list on `sprint-4` |
-| Failure handling | Investigate the Sprint 3 follow-up (one Supabase test run failed with an unknown cause) and propose a fix | I chose to fix what the user sees and what the tests leave behind, not to hide failures behind retries | Offline tests, plus a live Supabase run (`docs/sprint-status.md`) |
-| Quality slice | Krippendorff's alpha in Core, a SummEval reader, `pfq quality summeval` | I chose alpha, because SummEval's scores are 1–5 ratings, and a reader tested on a hand-made fixture. I'll download the real file in Sprint 5 | Alpha reproduces Krippendorff's published example (0.743 nominal, 0.849 interval) |
+| Plan | Turn my Sprint 4 plan into steps, matched to the Sprint 4 assignment | I set the scope: the quality slice from my plan plus hardening, commits along the way. I merge and push myself | The plan is the commit list on `sprint-4` |
+| Agreement math | Implement the agreement metric in Core and check it against published values | I required a published worked example as the test, not just values the AI computed itself | Krippendorff's example reproduced: 0.743 nominal, 0.849 interval |
+| Dataset input | A SummEval reader that sends every score through Core validation | I chose a reader tested on a hand-made fixture now; I'll download the real file in Sprint 5 | Off-scale and non-numeric scores counted and treated as missing (tested) |
+| Hardening | Review error handling at the database boundary | I accepted cause-specific, safe error messages and retrying the connect only; I rejected retrying every operation, and a retry library | `tests/adapters/test_db_errors.py`; 32 Supabase tests pass |
 
-**Consequential AI contribution (database failure handling: what to retry, and what to say):**
-- **The question.** My Sprint 3 notes left a follow-up: one Supabase test run failed with 11 setup errors, and the suggested fix was "add connection retry or timeout handling". Before adding retries, I wanted to know what actually goes wrong.
-- **What the AI found.**
-  - Every connect failure produced the same message, "check DATABASE_URL in .env", whatever the cause. An error during a command printed only "unexpected OperationalError", with no cause and no next step.
-  - A dropped connection during a Supabase test left its throwaway schema in the real database. One, `pfq_test_52d59e09`, was still there from Sprint 3.
-- **What it recommended, and what I decided.**
-  - **Rejected:** a blanket retry with backoff on every database call. Retrying can't fix a wrong password or an unknown host; it only makes the user wait longer. Replaying a command after a dropped connection is unsafe: the server has already rolled back the transaction, so part of a multi-step command could run twice. Every load is idempotent, so re-running the whole command is the safe recovery.
-  - **Accepted:** retry only the connect, and only for causes that pass (timeout, no free connection slots). Every failure gets a message that names the cause and the next step and never shows the host or user (`adapters/storage/db_errors.py`).
-  - **Rejected:** a retry library (tenacity). It's one retry site, and a library would make it easy to wrap operations in retries, which my design rules out.
-- **Where the AI's first fix was wrong.** Its first fixture change assumed the leftover schema came from a failed setup. The leftover schema was complete, so the connection had died after setup. A live run then reproduced the problem: a connection dropped mid-test and left a second orphan, `pfq_test_0aaa009a`. I had it drop the schema over a fresh connection instead (`0b625a1`). After that change, the next full run left nothing behind. Separately, a hand-computed expected value in a new test was wrong; the test's exact-fraction check caught it.
+**Consequential AI contribution (which agreement metric decides "expert vs. crowd"):**
+- **The question.** My plan, and AC-6.1, named Fleiss' kappa as the first agreement metric. Is that the right measure for the data the project will actually use?
+- **What the AI recommended.** Krippendorff's alpha instead, at the interval level. Its reasons:
+  - SummEval's scores are 1–5 ratings. Fleiss' kappa treats them as unordered categories, so a 4 vs. 5 counts as the same disagreement as a 1 vs. 5.
+  - SummEval has 3 experts and 5 crowd raters per summary. Fleiss' kappa assumes the same number of raters on every item and no missing ratings.
+  - Alpha weighs disagreement by its size, allows missing ratings, and works for both groups, so expert and crowd agreement are measured the same way.
+- **How I evaluated it.** I weighed it against what the number is for: comparing expert and crowd quality fairly, on the same scale, for a cost-of-quality argument. A metric that can't tell "nearly agree" from "completely disagree" would understate expert consistency. Alpha also needs no new dependency: it is about 30 lines of standard-library code, which keeps Core pure.
+- **What I decided.**
+  - **Accepted:** Krippendorff's alpha (nominal and interval) in `core/agreement.py`, with AC-6.1 changed and the reason recorded in `docs/requirements.md`.
+  - **Modified:** undefined agreement returns `None` (shown blank) rather than a number. Dataset scores are validated in Core and counted when rejected (new AC-6.5).
+  - **Rejected:** adding the `krippendorff` or `scipy` package.
 - **How it was verified.**
-  - 53 new offline test cases (186 in all, up from 133). The classifier is tested with the pooler's real error text, with the host and user replaced.
-  - After the fix, the Supabase suite passed 32 of 32 and left no schema behind.
-- **Limitation.** The cause of the dropped connections on Supabase's session pooler is still unproven. They are now reported clearly and cleaned up, not prevented.
+  - Core reproduces Krippendorff's (2011) published worked example: 4 observers, 12 units, missing values; 0.743 nominal, 0.849 interval.
+  - Hand-computed cases cover perfect agreement, systematic disagreement, rater order and undefined tables.
+  - One check caught the AI out: its hand-computed expected value for the expert-crowd correlation was wrong (0.9934, then 0.99432). The test's exact-fraction assertion failed, and the correct value is 0.99419. That is why the test states the exact fraction rather than trusting a typed decimal.
+  - 186 tests pass offline (up from 133), and 32 pass on Supabase.
+- **Limitation.** The real SummEval file hasn't been run yet, so there is no real expert-vs-crowd result. Interval alpha also assumes the 1–5 steps are equally spaced.
