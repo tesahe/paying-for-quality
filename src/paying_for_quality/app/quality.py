@@ -1,4 +1,4 @@
-"""Quality use case (FR-11): agreement within each rater group and expert vs. crowd, per dimension.
+"""Quality use case (FR-6): agreement within each rater group and expert vs. crowd, per dimension.
 
 The first quality slice reads a dataset file and reports; storing ratings in the database (the
 planned dataset / item / rater / label tables) comes with the LLM-judge comparison.

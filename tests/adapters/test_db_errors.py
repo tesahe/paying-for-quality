@@ -1,4 +1,4 @@
-"""Database failure handling (Sprint 4, FR-10): classified messages, connect retry, guarded operations.
+"""Database failure handling (Sprint 4, DC-9): classified messages, connect retry, guarded operations.
 
 No database and no psycopg needed: driver errors are stood in for by a small exception class that
 carries the same text and SQLSTATE the real driver produces. The paused-project text below is the
@@ -48,18 +48,18 @@ LOST = FakeDriverError("server closed the connection unexpectedly\n\tThis probab
         (FakeDriverError("something new"), "unknown", False),
     ],
 )
-def test_classify_names_the_cause(error, kind, transient):
+def test_classify_names_the_cause(error, kind, transient):  # AC-DC-9.1
     failure = classify(error)
     assert (failure.kind, failure.transient) == (kind, transient)
 
 
-def test_paused_project_says_restore_it_not_check_the_url():
+def test_paused_project_says_restore_it_not_check_the_url():  # AC-DC-9.1
     # The Sprint 3 message ("check DATABASE_URL in .env") sent the user to the wrong place.
     assert "paused" in classify(PAUSED).message and "restore it" in classify(PAUSED).message
 
 
 @pytest.mark.parametrize("error", [PAUSED, TIMEOUT, BAD_PASSWORD, DNS, FakeDriverError(f"x {SECRET_HOST}")])
-def test_messages_never_repeat_connection_details(error):  # AC-10.3
+def test_messages_never_repeat_connection_details(error):  # AC-DC-9.3
     message = classify(error).message
     assert SECRET_HOST not in message and SECRET_USER not in message and "rhfuunhdgtkusntauvdy" not in message
 
@@ -77,13 +77,13 @@ class Attempts:
         return outcome
 
 
-def test_transient_failure_is_retried_with_doubling_delays():  # AC-10.2
+def test_transient_failure_is_retried_with_doubling_delays():  # AC-DC-9.2
     connect, slept = Attempts(TIMEOUT, SLOTS, "conn"), []
     assert connect_with_retry(connect, FakeDriverError, attempts=3, first_delay=2, sleep=slept.append) == "conn"
     assert connect.calls == 3 and slept == [2, 4]
 
 
-def test_permanent_failure_is_not_retried():  # AC-10.2
+def test_permanent_failure_is_not_retried():  # AC-DC-9.2
     connect, slept = Attempts(PAUSED, "never"), []
     with pytest.raises(StorageError, match="paused") as exc:
         connect_with_retry(connect, FakeDriverError, sleep=slept.append)
@@ -122,14 +122,14 @@ class DroppingConnection:
         self.closed = True
 
 
-def test_dropped_connection_mid_operation_becomes_a_handled_error():  # AC-10.4
+def test_dropped_connection_mid_operation_becomes_a_handled_error():  # AC-DC-9.4
     guarded = GuardedConnection(DroppingConnection(), FakeDriverError)
     with pytest.raises(StorageError, match="lost during the command.*Re-run") as exc:
         guarded.execute("SELECT 1")
     assert isinstance(exc.value.__cause__, FakeDriverError)  # kept for PFQ_DEBUG
 
 
-def test_failed_rollback_does_not_hide_the_original_error():  # AC-10.4
+def test_failed_rollback_does_not_hide_the_original_error():  # AC-DC-9.4
     from paying_for_quality.adapters.storage.sql_repository import SqlRepository
 
     repo = SqlRepository(GuardedConnection(DroppingConnection(), FakeDriverError))

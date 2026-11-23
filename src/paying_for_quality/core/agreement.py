@@ -1,4 +1,4 @@
-"""Rater agreement and rater-group comparison: the first quality-side math (Sprint 4, FR-11).
+"""Rater agreement and rater-group comparison: the first quality-side math (Sprint 4, FR-6).
 
 Pure functions over plain numbers. A rating table is a list of units (items); each unit is a list
 with one slot per rater, holding a score or None when that rater did not rate the unit.

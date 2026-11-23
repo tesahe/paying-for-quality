@@ -125,7 +125,7 @@ def _storage_failure(*_args, **_kwargs):
         raise cli.PfqError("database operation failed: the connection was lost") from driver_error
 
 
-def test_database_failure_prints_only_the_safe_message(tmp_path, monkeypatch, capsys):  # AC-10.3
+def test_database_failure_prints_only_the_safe_message(tmp_path, monkeypatch, capsys):  # AC-DC-9.3
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("DATABASE_URL", "sqlite:///x.db")
     monkeypatch.delenv("PFQ_DEBUG", raising=False)

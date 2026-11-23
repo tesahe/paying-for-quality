@@ -1,4 +1,4 @@
-"""SummEval reader and the quality report (FR-11). The fixture is hand-made in SummEval's record shape;
+"""SummEval reader and the quality report (FR-6). The fixture is hand-made in SummEval's record shape;
 it holds no real SummEval data."""
 
 from pathlib import Path
@@ -22,14 +22,14 @@ def test_reader_builds_one_row_per_summary_and_one_slot_per_rater():
     assert data.tables[("coherence", "expert")][0] == [2.0, 2.0, 3.0]
 
 
-def test_invalid_scores_become_missing_and_are_counted():  # AC-11.3
+def test_invalid_scores_become_missing_and_are_counted():  # AC-6.5
     data = load_summeval(SAMPLE)
     assert data.rejected_scores == 2  # "five" and 9
     assert data.tables[("fluency", "expert")][3] == [4.0, None, 4.0]
     assert data.tables[("consistency", "crowd")][3][2] is None
 
 
-def test_report_has_one_row_per_dimension_with_alpha_from_core():  # AC-11.4
+def test_report_has_one_row_per_dimension_with_alpha_from_core():  # AC-6.4
     data = load_summeval(SAMPLE)
     report = agreement_report(data)
     assert [row[0] for row in report.rows] == ["coherence", "consistency", "fluency", "relevance"]

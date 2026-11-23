@@ -1,4 +1,4 @@
-"""Quality-side Core math (FR-11): Krippendorff's alpha and rater-group comparison."""
+"""Quality-side Core math (FR-6): Krippendorff's alpha and rater-group comparison."""
 
 import pytest
 
@@ -21,7 +21,7 @@ KRIPPENDORFF_2011 = [
 ]
 
 
-def test_alpha_matches_the_published_worked_example():  # AC-11.1
+def test_alpha_matches_the_published_worked_example():  # AC-6.1
     assert krippendorff_alpha(KRIPPENDORFF_2011, "nominal") == pytest.approx(0.743, abs=5e-4)
     assert krippendorff_alpha(KRIPPENDORFF_2011, "interval") == pytest.approx(0.849, abs=5e-4)
 
@@ -50,7 +50,7 @@ def test_hand_computed_two_rater_case():
 
 
 @pytest.mark.parametrize("table", [[], [[1]], [[1, N], [N, 2]], [[2, 2], [2, 2]]])
-def test_alpha_is_undefined_without_pairs_or_variation(table):  # AC-11.2
+def test_alpha_is_undefined_without_pairs_or_variation(table):  # AC-6.2
     assert krippendorff_alpha(table) is None
 
 
@@ -79,5 +79,5 @@ def test_group_comparison_needs_matching_units_and_variation():
 
 @pytest.mark.parametrize("value, ok", [(1, True), (5, True), (4.5, True), (0, False), (6, False),
                                        (True, False), ("3", False), (None, False)])
-def test_scores_must_be_numbers_inside_the_scale(value, ok):  # AC-11.3
+def test_scores_must_be_numbers_inside_the_scale(value, ok):  # AC-6.5
     assert score_in_scale(value, 1, 5) is ok
