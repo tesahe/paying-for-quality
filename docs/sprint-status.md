@@ -1,55 +1,59 @@
 # Sprint Status
 
-## Sprint 4: Strengthen and Review: database failure handling
+## Sprint 4: Strengthen and Review: trustworthy agreement math for the quality side
 
-**Branch:** `sprint-4` · **Status:** complete on the branch; merge into `main` and push are left to the owner.
+**Branch:** `sprint-4` · **Status:** complete (merged into `main`, branch kept)
 
-### The concern investigated
+### The concern
 
-**What does `pfq` do when the database is not there?** Sprint 3 left two loose ends: one Supabase test run failed with 11 setup errors and an unknown cause, and the follow-up said "add connection retry or timeout handling". Checking it turned up a concrete weakness:
+The project asks whether experts' pay premium buys enough extra quality. Sprints 2–3 built the price side. The quality side answers with **agreement math**: how consistently experts rate, how consistently crowd raters rate, and how closely the two groups match. If that math is wrong, or if bad scores slip into it, every later cost-of-quality number is wrong too, and nobody would notice. So before any real dataset goes through it, Sprint 4 makes the agreement math **correct, validated and verified against published values**. That follows my original plan: harden what exists, then start the quality side with SummEval.
 
-| Situation | Sprint 3 behavior | Why it matters |
-|---|---|---|
-| Any connect failure (unreachable project, wrong password, unknown host, timeout) | `error: could not connect to the database; check DATABASE_URL in .env` | One message for every cause, so the next step is often wrong |
-| Connection lost in the middle of a command | `error: unexpected OperationalError (set PFQ_DEBUG=1 for details)` | No cause and no next step |
-| Connection lost during a Supabase test | The fixture's `drop_schema` fails on the dead connection | Leaves a `pfq_test_*` schema in the real database. One, `pfq_test_52d59e09` (complete, version 2), was found from Sprint 3 |
+### What was improved
 
-### The decision
+1. **The right metric for the data (a decision changed from the plan).** The plan and AC-6.1 named Fleiss' kappa. SummEval's scores are 1–5 ratings (coherence, consistency, fluency, relevance), from **3 experts and 5 crowd raters** per summary. Fleiss' kappa treats scores as unordered categories, so a 4 vs. 5 counts the same as a 1 vs. 5; it also needs the same raters on every item. Krippendorff's alpha at the *interval* level weighs a disagreement by its size, handles missing ratings, and works with groups of different sizes. `core/agreement.py::krippendorff_alpha` implements it (nominal and interval) in pure standard-library Core.
+2. **No misleading numbers.** When agreement is undefined (fewer than two ratings to pair, or every rating identical), alpha returns `None`, shown as blank, instead of crashing or reporting a fake 1.0. The expert-vs-crowd correlation does the same when there are fewer than 3 shared items or no variation.
+3. **Untrusted dataset scores go through Core validation.** `score_in_scale` accepts only a real number inside the declared scale. The SummEval reader (`adapters/datasets/summeval.py`) turns any other score (`"five"`, `9`, `true`) into a missing rating and **counts it**; it never guesses a value. The command prints the count.
+4. **Expert vs. crowd, per dimension.** `app/quality.py::agreement_report` gives one row per dimension: expert alpha, crowd alpha, expert-crowd correlation of per-summary means, and the mean expert-minus-crowd gap. `pfq quality summeval [--file]` prints it with no database needed.
+5. **Clean layering.** The rating data type (`RatingData`) lives in Core, so the use case depends only on Core, not on the dataset adapter. Adding a second dataset means writing one new reader.
+6. **No new dependency.** Alpha is about 30 lines, so no `krippendorff` or `scipy` package was added (Core stays standard-library only, DC-2).
 
-- **Classify, don't echo.** `adapters/storage/db_errors.py::classify` maps driver text and SQLSTATE to one of eight causes, each with a next step: `project_unavailable`, `auth_failed`, `host_unknown`, `too_many_connections`, `timeout`, `refused`, `connection_lost`, `unknown`. The driver text is never printed, because it holds the host and the user (which contains the project id).
-- **Retry only the connect, only when it can help.** `connect_with_retry` makes up to 3 attempts, with 2 s and 4 s waits, for `timeout` and `too_many_connections`. A paused project or a wrong password gets one attempt.
-- **Never replay an operation.** `GuardedConnection` turns any driver error into `StorageError` ("lost during the command … re-run the command (loads are idempotent)"). A failing rollback no longer hides the first error.
-- **Rejected:** a blanket retry around every database call, and a retry library. See `docs/ai-usage.md` (Sprint 4) for the AI's recommendation and how it was evaluated, and `docs/architecture.md`, "Code path: a database failure".
-- **Test fixture:** the schema is applied inside the `try`, and dropped over a fresh connection if the test's connection died.
+**Requirement:** FR-6, now Partial. AC-6.1 (changed to alpha), AC-6.2, AC-6.4 (on a fixture) and AC-6.5 (new) are implemented and tested (`docs/requirements.md`).
 
-**Requirement:** DC-9 with AC-DC-9.1–9.4 (`docs/requirements.md`).
+```
+pfq quality summeval --file tests/fixtures/summeval_sample.jsonl
+SummEval: 4 summaries; license: MIT (Yale-LILY/SummEval repository LICENSE; confirm when downloading)
+2 score(s) outside 1-5 treated as missing
+dimension    expert_alpha  crowd_alpha  expert_crowd_r  expert_minus_crowd  units
+coherence    0.792         0.334        0.946           -0.317              4
+...
+```
+(The fixture is hand-made in SummEval's format; these numbers are not findings.)
 
 ### Verification
 
 | Check | Result |
 |---|---|
-| `.venv/bin/pytest` (no network, no `.env`) | **186 passed, 32 deselected** (Sprint 3: 133). New: `tests/adapters/test_db_errors.py` (classification with the pooler's real reply text, retry and no-retry, secrets never in messages, a dropped connection, a failing rollback, fixture cleanup), CLI tests for the safe message and `PFQ_DEBUG`, plus the quality tests below |
-| `pfq init-db` and `pfq query rates_by_domain` (live, Supabase) | `Schema is up to date (version 2).` in 1.9 s; the Sprint 3 rates are intact (e.g. coding / staff, n = 40, $128.61/h) |
-| `pytest -m supabase`, run 1 (fixture without the fresh-connection drop) | **31 passed, 1 failed, 1 error** (132 s). The connection dropped mid-test in `test_raw_posting_lookup_and_uniqueness[postgres]`. The new message appeared ("connection … lost during the command … Re-run"), the teardown `drop_schema` failed on the dead connection, and a new orphan `pfq_test_0aaa009a` was left. The same test passes when run alone. **This reproduces the Sprint 3 failure mode live** |
-| `pytest -m supabase`, run 2 (current code) | **32 passed** (143 s; Sprint 3: 32). No new `pfq_test_*` schema left behind (checked afterwards: only `pfq` and the two older orphans) |
+| Alpha against the published worked example (Krippendorff 2011: 4 observers × 12 units, with missing values) | **0.743 nominal, 0.849 interval**: matches the published values to 3 decimals (`tests/core/test_agreement.py`) |
+| Hand-computed cases | A two-rater table (alpha = 1 − 6/22), perfect agreement = 1.0, systematic disagreement < 0, rater order doesn't change alpha, and an expert-crowd correlation checked as an exact fraction (r = 0.99419) |
+| Undefined and invalid input | Empty, single-rated, constant tables → `None`; unknown measurement level refused; off-scale, text and boolean scores rejected by `score_in_scale` |
+| Reader and command | On `tests/fixtures/summeval_sample.jsonl`: one row per summary, one slot per rater, 2 invalid scores counted as missing, malformed lines reported with their line number, a missing file explains where to get it (`tests/adapters/test_summeval.py`) |
+| `.venv/bin/pytest` (no network, no `.env`) | **186 passed, 32 deselected** (Sprint 3: 133) |
+| `.venv/bin/pytest -m supabase` | **32 passed** (143 s) |
 
-### Quality side: first slice (from the original plan)
+### Also hardened: database error handling
 
-- **Core:** `core/agreement.py` has Krippendorff's alpha (nominal and interval, missing ratings allowed, `None` when undefined), expert vs. crowd correlation of per-item means, the mean gap, and `score_in_scale`.
-- **Reader and command:** `adapters/datasets/summeval.py` reads SummEval's 3 expert and 5 crowd ratings per summary on four dimensions; off-scale scores become missing and are counted. `app/quality.py` and `pfq quality summeval [--file]` print one row per dimension. No database is needed.
-- **Verified:**
-  - alpha reproduces Krippendorff's (2011) published worked example: **0.743 nominal, 0.849 interval**;
-  - hand-computed two-rater and correlation cases;
-  - the reader and command on a hand-made, SummEval-shaped fixture (`tests/fixtures/summeval_sample.jsonl`, no real data).
-- **Not done:** the real SummEval file was not downloaded (owner's choice for this sprint). The license is recorded as MIT, to confirm on download. Rater scorecards, ambiguous items and storing ratings in the quality tables are not built.
-- **Requirement:** FR-6, now Partial (AC-6.1, 6.2, 6.4 on the fixture, and 6.5).
+- **Before:** every connection failure printed the same "check DATABASE_URL in .env", whatever the cause. An error in the middle of a command printed only "unexpected OperationalError".
+- **Now:** `adapters/storage/db_errors.py` maps the driver error to a cause with a next step (wrong password, unknown host, timeout, no free slots, lost connection, …). It never repeats the host or user.
+- **Retries:** only the connect is retried, and only for temporary causes. Operations are not replayed; every load is idempotent, so the message says to re-run.
+- **Test cleanup:** the Supabase test fixture now drops its throwaway schema over a fresh connection if the test's connection died. Before, it left schemas such as `pfq_test_52d59e09` behind.
+- **Where it is documented:** DC-9, AC-DC-9.1–9.4 and `tests/adapters/test_db_errors.py`.
 
 ### Known limitations
 
-- **The root cause of the dropped connections is unproven.** Supabase's pooler logs for the run show only normal client terminations. Each test opens its own connection through the session pooler (port 5432), which is the likely weak point; it was not reproduced on demand.
-- **Paused vs. wrong user name cannot be told apart:** the pooler gives the same reply for both, so the message names both.
-- **Rules are text matches** on driver messages, so a driver or pooler wording change falls back to the generic `unknown` message (still safe, but less helpful).
-- **Two orphan test schemas** (`pfq_test_52d59e09`, `pfq_test_0aaa009a`) are still in Supabase, waiting for the owner's OK to drop them.
+- **No real SummEval result yet.** The file has not been downloaded, so there is no real expert-vs-crowd number. Its license is recorded as MIT, to confirm on download.
+- **Interval alpha treats 1–5 as equally spaced.** An ordinal version is not built.
+- **Not built:** rater scorecards, ambiguous items, and storing ratings in the quality tables (planned for Sprint 5).
+- **Dropped connections on Supabase's session pooler** still happen occasionally in the test suite. They are now reported and cleaned up, but the cause is unproven.
 - **Carried over:** no LLM extraction, no `pfq review`, collection run by hand, the Sprint 2 demo not recorded, a small expert sample.
 
 ### Peer feedback
@@ -58,14 +62,21 @@
 
 ### Next step (Sprint 5)
 
-- Run the real SummEval file; store datasets, raters and labels in the quality tables (`pfq ingest`).
-- One LLM-judge comparison (FR-7) and the first price-vs-value summary (FR-8).
+- Download and run the real SummEval file; store datasets, raters and labels in the quality tables.
+- One LLM-judge comparison (FR-7), set beside expert vs. crowd, and the first price-vs-value summary (FR-8).
 - The LLM extractor and `pfq review` (FR-2, FR-5).
 - Record the demo; Peer Review 2.
 
 ### Sprint 4 commits
 
-On `sprint-4`: the database failure handling (`fix:`), the fresh-connection schema drop (`fix:`), Krippendorff's alpha and its tests (`feat:` / `test:`), the SummEval reader and quality command with tests (`feat:` / `test:`), requirement tags (`test:`), and these docs (`docs:`).
+On `sprint-4`:
+- Krippendorff's alpha and its tests (`feat:` / `test:`);
+- the SummEval reader and quality command, with tests (`feat:` / `test:`);
+- database error handling and test cleanup (`fix:`);
+- requirement tags (`test:`);
+- docs (`docs:`).
+
+The branch was merged into `main` (`merge: sprint-4 into main`) and kept.
 
 ---
 

@@ -204,7 +204,7 @@ This path decides whether a pay figure, from any source, may enter the rate tabl
 
 Key decision: `rate_observation` holds only validated, cited, hourly-USD figures and has no company column. `rates_by_domain` can therefore aggregate across sources without knowing where a number came from, and it cannot rank named companies (`AGENTS.md` §4.8).
 
-### Code path: a database failure (Sprint 4: the code path explained for this sprint)
+### Code path: a database failure (Sprint 4)
 
 This path decides what the user sees when Supabase is paused, slow, or drops the connection.
 
@@ -405,7 +405,7 @@ Policy: **Core stays standard-library only, permanently.** Adapters and analysis
 - numbered SQL migrations;
 - the LLM extractor moved to S4.
 
-**Decided in Sprint 4:** retry only the connect, and only for transient causes; no retry or statistics dependency; Krippendorff's alpha (not Fleiss' kappa) as the first agreement metric; the LLM extractor and review commands moved to S5.
+**Decided in Sprint 4:** Krippendorff's alpha (not Fleiss' kappa) as the first agreement metric; dataset scores validated in Core; no statistics or retry dependency; retry only the connect, and only for transient causes; the LLM extractor and review commands moved to S5.
 
 ## What Changed This Sprint
 
@@ -450,10 +450,16 @@ Policy: **Core stays standard-library only, permanently.** Adapters and analysis
   - the full `Repository` method list;
   - the `--fake` flag is `--extractor fake`.
 
-**Sprint 4: strengthening database failure handling (plus the first quality slice).**
-- **Why.** Every connect failure gave the same "check DATABASE_URL in .env" message whatever the cause, and errors during a command surfaced as "unexpected OperationalError". A Sprint 3 test run had also failed with an unknown cause and left a throwaway schema, `pfq_test_52d59e09`, behind.
-- **Storage adapter.** New `adapters/storage/db_errors.py` (`classify`, `connect_with_retry`) and `GuardedConnection` in `postgres_repository.py`. `PostgresRepository` takes `connect_attempts` (default 3). No change to the `Repository` port or the shared SQL.
-- **CLI.** `PFQ_DEBUG=1` now also re-raises handled errors that carry a chained driver error.
-- **Tests.** The Supabase `repo` fixture applies the schema inside its `try`, and drops the schema over a fresh connection if the test's connection died.
-- **Quality side (FR-6, partial).** `core/agreement.py`, `adapters/datasets/summeval.py`, `app/quality.py`, `pfq quality summeval`. Deviation from the Sprint 1 design: there is no `DatasetLoader` port and no quality tables yet. The report reads the file directly and stores nothing; both arrive with the second dataset and the judge (S5).
-- **Foundational change, with reason.** AC-6.1 now names Krippendorff's alpha instead of Fleiss' kappa (`docs/requirements.md`), and DC-9 was added.
+**Sprint 4: trustworthy agreement math for the quality side (plus database error hardening).**
+- **Why.** The quality side compares expert and crowd agreement, so its math has to be right before real data goes through it. My plan named Fleiss' kappa. SummEval's 1–5 ratings, from 3 experts and 5 crowd raters per item, call for Krippendorff's alpha (interval level, missing ratings allowed, groups of different sizes).
+- **Core.** `core/agreement.py`:
+  - `krippendorff_alpha` (nominal, interval; `None` when undefined);
+  - `group_correlation` and `mean_gap` (expert vs. crowd);
+  - `score_in_scale` (dataset scores are untrusted input);
+  - `RatingData`.
+- **Quality slice (FR-6, partial).** `adapters/datasets/summeval.py`, `app/quality.py::agreement_report`, `pfq quality summeval`. Deviation from the Sprint 1 design: there is no `DatasetLoader` port and no quality tables yet. The report reads the file directly and stores nothing; both arrive with the second dataset and the judge (S5).
+- **Hardening.**
+  - `adapters/storage/db_errors.py` (`classify`, `connect_with_retry`) and `GuardedConnection` in `postgres_repository.py`: database errors become safe, cause-specific messages, and only the connect is retried. No change to the `Repository` port or the shared SQL.
+  - `PFQ_DEBUG=1` now also re-raises handled errors that carry a chained driver error.
+  - The Supabase test fixture drops its schema over a fresh connection if the test's connection died.
+- **Foundational change, with reason.** AC-6.1 now names Krippendorff's alpha instead of Fleiss' kappa, AC-6.5 was added (dataset scores validated in Core), and DC-9 was added (`docs/requirements.md`).
