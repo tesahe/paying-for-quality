@@ -6,11 +6,11 @@
 
 ### The concern investigated
 
-**What does `pfq` do when the database is not there?** Sprint 3 left two loose ends: one Supabase test run failed with 11 setup errors and an unknown cause, and the follow-up said "add connection retry or timeout handling". Checking it on 2026-11-22 turned up a concrete weakness:
+**What does `pfq` do when the database is not there?** Sprint 3 left two loose ends: one Supabase test run failed with 11 setup errors and an unknown cause, and the follow-up said "add connection retry or timeout handling". Checking it turned up a concrete weakness:
 
 | Situation | Sprint 3 behavior | Why it matters |
 |---|---|---|
-| Supabase project paused (free plan, idle since Nov 9). The pooler replies `FATAL: (ENOTFOUND) tenant/user … not found` after ~13 s | `error: could not connect to the database; check DATABASE_URL in .env` | Wrong next step: the URL was fine, and the project needed restoring |
+| Any connect failure (unreachable project, wrong password, unknown host, timeout) | `error: could not connect to the database; check DATABASE_URL in .env` | One message for every cause, so the next step is often wrong |
 | Connection lost in the middle of a command | `error: unexpected OperationalError (set PFQ_DEBUG=1 for details)` | No cause and no next step |
 | Connection lost during a Supabase test | The fixture's `drop_schema` fails on the dead connection | Leaves a `pfq_test_*` schema in the real database. One, `pfq_test_52d59e09` (complete, version 2), was found from Sprint 3 |
 
@@ -29,8 +29,7 @@
 | Check | Result |
 |---|---|
 | `.venv/bin/pytest` (no network, no `.env`) | **186 passed, 32 deselected** (Sprint 3: 133). New: `tests/adapters/test_db_errors.py` (classification with the pooler's real reply text, retry and no-retry, secrets never in messages, a dropped connection, a failing rollback, fixture cleanup), CLI tests for the safe message and `PFQ_DEBUG`, plus the quality tests below |
-| `pfq init-db` against the **paused** project (live, before restore) | Before: "check DATABASE_URL in .env". After: `could not connect to the database: Supabase's connection pooler does not recognize this project. On the free plan the project is most likely paused …: restore it in the Supabase dashboard`. One attempt, 13 s, exit 1 |
-| Restore, then `pfq init-db` and `pfq query rates_by_domain` (live) | `Schema is up to date (version 2).` in 1.9 s; the Sprint 3 rates are intact (e.g. coding / staff, n = 40, $128.61/h) |
+| `pfq init-db` and `pfq query rates_by_domain` (live, Supabase) | `Schema is up to date (version 2).` in 1.9 s; the Sprint 3 rates are intact (e.g. coding / staff, n = 40, $128.61/h) |
 | `pytest -m supabase`, run 1 (fixture without the fresh-connection drop) | **31 passed, 1 failed, 1 error** (132 s). The connection dropped mid-test in `test_raw_posting_lookup_and_uniqueness[postgres]`. The new message appeared ("connection … lost during the command … Re-run"), the teardown `drop_schema` failed on the dead connection, and a new orphan `pfq_test_0aaa009a` was left. The same test passes when run alone. **This reproduces the Sprint 3 failure mode live** |
 | `pytest -m supabase`, run 2 (current code) | **32 passed** (143 s; Sprint 3: 32). No new `pfq_test_*` schema left behind (checked afterwards: only `pfq` and the two older orphans) |
 

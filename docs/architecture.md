@@ -451,7 +451,7 @@ Policy: **Core stays standard-library only, permanently.** Adapters and analysis
   - the `--fake` flag is `--extractor fake`.
 
 **Sprint 4: strengthening database failure handling (plus the first quality slice).**
-- **Why.** On 2026-11-22 the Supabase project had paused itself (free plan, idle since Nov 9). The pooler replied "tenant/user … not found", and `pfq` said "check DATABASE_URL in .env", which pointed the user away from the real cause. Errors during a command surfaced as "unexpected OperationalError". A Sprint 3 test run had also failed with an unknown cause and left a throwaway schema, `pfq_test_52d59e09`, behind.
+- **Why.** Every connect failure gave the same "check DATABASE_URL in .env" message whatever the cause, and errors during a command surfaced as "unexpected OperationalError". A Sprint 3 test run had also failed with an unknown cause and left a throwaway schema, `pfq_test_52d59e09`, behind.
 - **Storage adapter.** New `adapters/storage/db_errors.py` (`classify`, `connect_with_retry`) and `GuardedConnection` in `postgres_repository.py`. `PostgresRepository` takes `connect_attempts` (default 3). No change to the `Repository` port or the shared SQL.
 - **CLI.** `PFQ_DEBUG=1` now also re-raises handled errors that carry a chained driver error.
 - **Tests.** The Supabase `repo` fixture applies the schema inside its `try`, and drops the schema over a fresh connection if the test's connection died.

@@ -27,8 +27,8 @@ The economics: efficiency-wage theory says firms overpay when quality is hard to
 
 ## Current Sprint Status
 
-**Sprint 4: Strengthen and Review (complete on `sprint-4`).** The strengthening work is **database failure handling**. On 2026-11-22 the Supabase project had paused itself, and `pfq` told the user to "check DATABASE_URL", which was the wrong place to look. Errors in the middle of a command showed only "unexpected OperationalError".
-- Every database error now ends in a handled message that names the likely cause and the next step ("the project is most likely paused: restore it"), and never repeats the host or user (`adapters/storage/db_errors.py`).
+**Sprint 4: Strengthen and Review (complete on `sprint-4`).** The strengthening work is **database failure handling**. Every connection failure used to give the same "check DATABASE_URL" message whatever the cause, and errors in the middle of a command showed only "unexpected OperationalError".
+- Every database error now ends in a handled message that names the likely cause and the next step, and never repeats the host or user (`adapters/storage/db_errors.py`).
 - Connecting is retried only for transient causes (timeout, no free slots). Operations are never replayed: the server has rolled them back, and every load is idempotent, so the message says to re-run.
 - The Supabase test fixture no longer leaves throwaway schemas behind when a connection dies (two such orphans were found).
 - First quality slice (original plan): Krippendorff's alpha in Core, which reproduces the published worked example, plus `pfq quality summeval` (expert vs. crowd per dimension; real file not downloaded yet).
@@ -114,5 +114,4 @@ BLS data is retrieved through the BLS Public Data API (dates in each record's ci
 - **BLS** returns only the latest estimates, and excludes the self-employed.
 - No LLM extraction yet; `pfq review` is not built; non-USD pay is excluded from hourly figures.
 - The quality side has started with agreement metrics only. The SummEval file has not been run yet, and rater scorecards, stored labels and LLM judges are not built. No human raters are recruited; it uses public datasets.
-- Supabase's free plan pauses the project after about 7 idle days; `pfq` now says so, but the project must be restored by hand.
 - Collection is run by hand.
