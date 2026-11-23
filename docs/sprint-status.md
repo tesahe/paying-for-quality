@@ -1,8 +1,77 @@
 # Sprint Status
 
+## Sprint 4: Strengthen and Review: database failure handling
+
+**Branch:** `sprint-4` · **Status:** complete on the branch; merge into `main` and push are left to the owner.
+
+### The concern investigated
+
+**What does `pfq` do when the database is not there?** Sprint 3 left two loose ends: one Supabase test run failed with 11 setup errors and an unknown cause, and the follow-up said "add connection retry or timeout handling". Checking it turned up a concrete weakness:
+
+| Situation | Sprint 3 behavior | Why it matters |
+|---|---|---|
+| Any connect failure (unreachable project, wrong password, unknown host, timeout) | `error: could not connect to the database; check DATABASE_URL in .env` | One message for every cause, so the next step is often wrong |
+| Connection lost in the middle of a command | `error: unexpected OperationalError (set PFQ_DEBUG=1 for details)` | No cause and no next step |
+| Connection lost during a Supabase test | The fixture's `drop_schema` fails on the dead connection | Leaves a `pfq_test_*` schema in the real database. One, `pfq_test_52d59e09` (complete, version 2), was found from Sprint 3 |
+
+### The decision
+
+- **Classify, don't echo.** `adapters/storage/db_errors.py::classify` maps driver text and SQLSTATE to one of eight causes, each with a next step: `project_unavailable`, `auth_failed`, `host_unknown`, `too_many_connections`, `timeout`, `refused`, `connection_lost`, `unknown`. The driver text is never printed, because it holds the host and the user (which contains the project id).
+- **Retry only the connect, only when it can help.** `connect_with_retry` makes up to 3 attempts, with 2 s and 4 s waits, for `timeout` and `too_many_connections`. A paused project or a wrong password gets one attempt.
+- **Never replay an operation.** `GuardedConnection` turns any driver error into `StorageError` ("lost during the command … re-run the command (loads are idempotent)"). A failing rollback no longer hides the first error.
+- **Rejected:** a blanket retry around every database call, and a retry library. See `docs/ai-usage.md` (Sprint 4) for the AI's recommendation and how it was evaluated, and `docs/architecture.md`, "Code path: a database failure".
+- **Test fixture:** the schema is applied inside the `try`, and dropped over a fresh connection if the test's connection died.
+
+**Requirement:** DC-9 with AC-DC-9.1–9.4 (`docs/requirements.md`).
+
+### Verification
+
+| Check | Result |
+|---|---|
+| `.venv/bin/pytest` (no network, no `.env`) | **186 passed, 32 deselected** (Sprint 3: 133). New: `tests/adapters/test_db_errors.py` (classification with the pooler's real reply text, retry and no-retry, secrets never in messages, a dropped connection, a failing rollback, fixture cleanup), CLI tests for the safe message and `PFQ_DEBUG`, plus the quality tests below |
+| `pfq init-db` and `pfq query rates_by_domain` (live, Supabase) | `Schema is up to date (version 2).` in 1.9 s; the Sprint 3 rates are intact (e.g. coding / staff, n = 40, $128.61/h) |
+| `pytest -m supabase`, run 1 (fixture without the fresh-connection drop) | **31 passed, 1 failed, 1 error** (132 s). The connection dropped mid-test in `test_raw_posting_lookup_and_uniqueness[postgres]`. The new message appeared ("connection … lost during the command … Re-run"), the teardown `drop_schema` failed on the dead connection, and a new orphan `pfq_test_0aaa009a` was left. The same test passes when run alone. **This reproduces the Sprint 3 failure mode live** |
+| `pytest -m supabase`, run 2 (current code) | **32 passed** (143 s; Sprint 3: 32). No new `pfq_test_*` schema left behind (checked afterwards: only `pfq` and the two older orphans) |
+
+### Quality side: first slice (from the original plan)
+
+- **Core:** `core/agreement.py` has Krippendorff's alpha (nominal and interval, missing ratings allowed, `None` when undefined), expert vs. crowd correlation of per-item means, the mean gap, and `score_in_scale`.
+- **Reader and command:** `adapters/datasets/summeval.py` reads SummEval's 3 expert and 5 crowd ratings per summary on four dimensions; off-scale scores become missing and are counted. `app/quality.py` and `pfq quality summeval [--file]` print one row per dimension. No database is needed.
+- **Verified:**
+  - alpha reproduces Krippendorff's (2011) published worked example: **0.743 nominal, 0.849 interval**;
+  - hand-computed two-rater and correlation cases;
+  - the reader and command on a hand-made, SummEval-shaped fixture (`tests/fixtures/summeval_sample.jsonl`, no real data).
+- **Not done:** the real SummEval file was not downloaded (owner's choice for this sprint). The license is recorded as MIT, to confirm on download. Rater scorecards, ambiguous items and storing ratings in the quality tables are not built.
+- **Requirement:** FR-6, now Partial (AC-6.1, 6.2, 6.4 on the fixture, and 6.5).
+
+### Known limitations
+
+- **The root cause of the dropped connections is unproven.** Supabase's pooler logs for the run show only normal client terminations. Each test opens its own connection through the session pooler (port 5432), which is the likely weak point; it was not reproduced on demand.
+- **Paused vs. wrong user name cannot be told apart:** the pooler gives the same reply for both, so the message names both.
+- **Rules are text matches** on driver messages, so a driver or pooler wording change falls back to the generic `unknown` message (still safe, but less helpful).
+- **Two orphan test schemas** (`pfq_test_52d59e09`, `pfq_test_0aaa009a`) are still in Supabase, waiting for the owner's OK to drop them.
+- **Carried over:** no LLM extraction, no `pfq review`, collection run by hand, the Sprint 2 demo not recorded, a small expert sample.
+
+### Peer feedback
+
+**Status: still not received.** No Peer Review 1 recommendations had reached me by the Sprint 4 submission, so there is no recommendation to accept, adapt, postpone or reject yet. **Follow-up:** record it in Sprint 5 when it arrives.
+
+### Next step (Sprint 5)
+
+- Run the real SummEval file; store datasets, raters and labels in the quality tables (`pfq ingest`).
+- One LLM-judge comparison (FR-7) and the first price-vs-value summary (FR-8).
+- The LLM extractor and `pfq review` (FR-2, FR-5).
+- Record the demo; Peer Review 2.
+
+### Sprint 4 commits
+
+On `sprint-4`: the database failure handling (`fix:`), the fresh-connection schema drop (`fix:`), Krippendorff's alpha and its tests (`feat:` / `test:`), the SummEval reader and quality command with tests (`feat:` / `test:`), requirement tags (`test:`), and these docs (`docs:`).
+
+---
+
 ## Sprint 3: Expansion and Integration: the source-agnostic rate model
 
-**Branch:** `sprint-3` · **Status:** complete (merged into `main`, branch kept)
+**Branch:** `sprint-3` · **Status:** complete (merged into `main` in `9bcf18b`, branch kept)
 
 ### The improvement
 

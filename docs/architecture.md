@@ -22,9 +22,9 @@ flowchart LR
     app --> ports{{Ports}}
     ports -.implemented by.-> src[PostingSource adapters<br/>Ashby (Greenhouse later)]
     ports -.implemented by.-> rates[RateSource adapters<br/>cited file, BLS OEWS, job boards]
-    ports -.implemented by.-> llm[Extractor / Judge adapters<br/>baseline regex, fake; LLM in S4]
+    ports -.implemented by.-> llm[Extractor / Judge adapters<br/>baseline regex, fake; LLM in S5]
     ports -.implemented by.-> repo[Repository adapters<br/>Postgres / SQLite]
-    ports -.implemented by.-> ds[DatasetLoader adapters<br/>SummEval, ...]
+    app -.reads file via.-> ds[Dataset readers<br/>SummEval]
     repo --> db[(Supabase Postgres<br/>system of record)]
     repo --> local[(Local SQLite<br/>tests, offline runs)]
     src --> raw[(data/raw/)]
@@ -55,18 +55,18 @@ src/paying_for_quality/
     errors.py        ✓ issue codes and typed errors
     vocab.py         ✓ closed vocabularies: domains, engagement, rater kind, provenance kind; title → domain keywords
     rates.py         ✓ validate_rate: one validation path for a pay rate from any source
-    agreement.py       Cohen's / Fleiss' kappa, Krippendorff's alpha, scorecards (S4)
+    agreement.py     ✓ Krippendorff's alpha (nominal, interval), group correlation and mean gap, score_in_scale, RatingData (S4); scorecards S5
   app/
-    market.py        ✓ collect and extract use cases (review: S4)
+    market.py        ✓ collect and extract use cases (review: S5)
     rates.py         ✓ load_rates use case; JobBoardRates (rates from accepted postings)
     reporting.py     ✓ named queries
-    quality.py         ingest dataset, evaluate raters, run judge (S4–S5)
+    quality.py       ✓ agreement_report: alpha per group, expert vs. crowd per dimension (S4); judge run S5
   adapters/
     sources/         ✓ ashby.py, http.py (gentle GET), registry.py (data/sources.toml)
-    llm/             ✓ baseline.py (deterministic, no LLM), fake.py; LLM extractor in S4
+    llm/             ✓ baseline.py (deterministic, no LLM), fake.py; LLM extractor in S5
     rates/           ✓ cited.py (data/rates.toml), bls.py (BLS OEWS hourly medians)
-    storage/         ✓ sql_repository.py (shared SQL), sqlite_repository.py, postgres_repository.py, raw_store.py
-    datasets/          summeval.py, ... (S4)
+    storage/         ✓ sql_repository.py (shared SQL), sqlite_repository.py, postgres_repository.py (GuardedConnection), db_errors.py (classify, connect_with_retry), raw_store.py
+    datasets/        ✓ summeval.py (reads data/raw/summeval/model_annotations.aligned.jsonl; S4)
   schema/            ✓ sqlite.sql, postgres.sql = version 1 (shipped inside the package so `pfq init-db` finds them)
     migrations/      ✓ sqlite/, postgres/: numbered NNN_name.sql files applied in order (002_rate_observation.sql)
   queries/           ✓ pay_by_domain.sql, pay_transparency.sql, rates_by_domain.sql
@@ -74,7 +74,7 @@ src/paying_for_quality/
 data/sources.toml    ✓ registry: [[source]] posting sources and [[rate_source]] rate sources, terms checks recorded per source
 data/rates.toml      ✓ cited pay figures (hand-made, committed; every entry cites a public source)
 scripts/source_census.py ✓ re-runnable census (counts only, stores nothing)
-tests/               ✓ pytest: core/, adapters/, app/, test_cli.py
+tests/               ✓ pytest: core/, adapters/, app/, test_cli.py, fixtures/ (hand-made SummEval-shaped sample)
 ```
 
 ### Core rules (the Engineering Core)
@@ -98,7 +98,7 @@ The course calls the project's central, testable logic its "Engineering Core"; t
      - The hourly result is outside $5–$500.
      - Both thresholds are provisional until the extraction accuracy evaluation (Sprint 4).
    - Any reject code beats any review code.
-3. **Agreement and rater quality.** Cohen's kappa (two raters), Fleiss' kappa and Krippendorff's alpha (many raters, missing labels allowed), per-rater scorecards (agreement with leave-one-out consensus or with expert consensus), and ambiguous-item detection (low per-item agreement).
+3. **Agreement and rater quality.** Krippendorff's alpha (built in S4, `core/agreement.py`: any number of raters, missing labels allowed, nominal or interval level; `None` when undefined), expert vs. crowd comparison of per-item means (built in S4), and later per-rater scorecards (agreement with leave-one-out consensus or with expert consensus), and ambiguous-item detection (low per-item agreement).
 4. **Rate validation** (`validate_rate`, `core/rates.py`). Turn a `RateCandidate` from any source into a `RateObservation` or a rejection. There is no review queue for rates.
    - **Key** (`MISSING_FIELD`). Every rate needs a non-empty `external_key`, which makes loading idempotent.
    - **Vocabulary** (`VOCAB_UNKNOWN`). `domain`, `engagement`, `rater_kind` and `provenance_kind` must come from `core/vocab.py`. The schema's CHECK constraints list the same values (tested).
@@ -116,12 +116,12 @@ Ports are `typing.Protocol` classes in `core/ports.py`. Use cases depend on thes
 | Port              | Method(s) (sketch)                                             | Real adapter                                                                           | Test fake                                       |
 | ----------------- | -------------------------------------------------------------- | -------------------------------------------------------------------------------------- | ----------------------------------------------- |
 | `PostingSource` ✓ | `list_postings() -> Iterable[RawPostingDoc]`               | `AshbySource` (public job-board API); Greenhouse later                                 | `FakeSource`: fixed documents or a raised error  |
-| `Extractor` ✓   | `extract(doc: RawPostingDoc) -> ExtractionCandidate`; `name`, `prompt_version` | `BaselineExtractor` (deterministic: structured compensation, else a pay regex). LLM client in S4 | `FakeExtractor`: scripted candidates, including invented pay and exceptions |
+| `Extractor` ✓   | `extract(doc: RawPostingDoc) -> ExtractionCandidate`; `name`, `prompt_version` | `BaselineExtractor` (deterministic: structured compensation, else a pay regex). LLM client in S5 | `FakeExtractor`: scripted candidates, including invented pay and exceptions |
 | `RateSource` ✓  | `list_rates() -> Iterable[RateCandidate]`                    | `CitedRates` (`data/rates.toml`), `BlsOewsRates` (BLS API), `JobBoardRates` (accepted postings; in `app/rates.py` because it reads the repository) | `FakeRates` in `tests/app/test_rates.py`; a fake fetch for BLS |
 | `RawStore` ✓    | `put(slug, digest, bytes) -> path`; `get(path) -> bytes`     | `FileRawStore`: `data/raw/<source>/<sha256>.json`                                      | The same class on a temp folder                  |
 | `Repository` ✓  | `apply_schema` (base schema + migrations; returns the versions applied), `schema_version`, `upsert_source`, collection-run bookkeeping, `find_raw_posting` / `has_listing` / `insert_raw_posting` / `touch_raw_posting`, `pending_extraction`, `record_extraction`, `upsert_rate_source`, `insert_rate`, `current_posted_pay`, `query`, `count_rows`, `close` | `PostgresRepository` (Supabase); `SqliteRepository` (local) | Temporary SQLite file                            |
 | `Judge`         | `score(item: Item, rubric: Rubric) -> JudgeCandidate`        | LLM client (provider **TBD**), S5                                                      | Returns scripted scores                         |
-| `DatasetLoader` | `load() -> DatasetBundle` (dataset, items, raters, labels)   | One per public dataset (SummEval first), S4                                            | Small hand-made bundle                          |
+| `DatasetLoader` | `load() -> DatasetBundle` (dataset, items, raters, labels)   | Not a port yet. S4 has one reader function, `adapters/datasets/summeval.py::load_summeval`, returning Core `RatingData`; the port is added with the second dataset (S5) | `tests/fixtures/summeval_sample.jsonl` (hand-made) |
 
 `Repository` may later split into `MarketRepository` and `QualityRepository` if it grows too large; that split is a refactor, not a design change.
 
@@ -133,7 +133,7 @@ What crosses the boundary:
 
 - **In:** the use case's arguments: a `SourceInfo` from the registry, port implementations built from config, and options such as `limit`. Request objects can be added if the argument lists grow.
 - **Out:** plain result dataclasses: `CollectResult` (new / changed / unchanged), `ExtractResult` (accepted / review / rejected / failed, issue-code counts), `LoadRatesResult` (new / unchanged / rejected, issue-code counts) and `QueryResult` (columns, rows). The CLI formats these as text tables or JSON (`--json`).
-- **Errors:** domain and validation errors are returned as data or raised as typed exceptions from `core/errors.py`; the CLI maps them to messages and exit codes. Stack traces are not shown to the user by default.
+- **Errors:** domain and validation errors are returned as data or raised as typed exceptions from `core/errors.py`; the CLI maps them to messages and exit codes. Stack traces are not shown to the user by default. Database driver errors never cross the boundary raw: the Postgres adapter turns them into `StorageError` with a classified message (see "Code path: a database failure"). `PFQ_DEBUG=1` re-raises with the driver error chained.
 
 Why it is useful: the same use cases can later sit behind a web UI or a scheduled job without change; tests can call use cases directly with fakes; and the CLI is thin enough to test with a few smoke tests.
 
@@ -146,12 +146,13 @@ The second boundary is **use cases → ports**. It keeps the Core testable witho
 | `pfq init-db`                                 | Create the schema, or upgrade an existing database by applying newer migrations | S2 ✓ (migrations: S3 ✓) |
 | `pfq sources`                                 | List registered sources and whether they may be collected                    | S2 ✓          |
 | `pfq collect --source <slug>`                 | Pull postings from one source; store new or changed snapshots                | S2 ✓          |
-| `pfq extract [--extractor baseline\|fake] [--limit N]` | Run extraction on unprocessed snapshots; validate; store or queue for review | S2 ✓ (LLM extractor: S4) |
+| `pfq extract [--extractor baseline\|fake] [--limit N]` | Run extraction on unprocessed snapshots; validate; store or queue for review | S2 ✓ (LLM extractor: S5) |
 | `pfq rates load --source <slug>`              | Load rates from one registered rate source through Core validation          | S3 ✓          |
 | `pfq query <name> [--json]`                   | Run a named, committed SQL analysis (`pay_by_domain`, `pay_transparency`, `rates_by_domain`) | S2 ✓ (`rates_by_domain`: S3 ✓) |
-| `pfq review list \| accept <id> \| reject <id>` | Work the low-confidence review queue                                         | S4            |
-| `pfq ingest <dataset>`                        | Load a public multi-rater dataset                                            | S4            |
-| `pfq evaluate --dataset <name>`               | Agreement metrics, rater scorecards, expert vs. crowd; optional judge run    | S4–S5        |
+| `pfq quality summeval [--file PATH]`          | Read the SummEval file and print alpha per rater group and expert vs. crowd per dimension (no database) | S4 ✓          |
+| `pfq review list \| accept <id> \| reject <id>` | Work the low-confidence review queue                                         | S5            |
+| `pfq ingest <dataset>`                        | Store a multi-rater dataset in the quality tables                            | S5            |
+| `pfq evaluate --dataset <name>`               | Agreement over stored labels, rater scorecards; optional judge run           | S5            |
 | `pfq report`                                  | Assemble the price-vs-value summary from Core results and SQL                | S5            |
 
 Exit codes: `0` success; `1` handled error (validation, missing data, external service failure); `2` usage error (argparse default).
@@ -179,7 +180,7 @@ This is the path that decides whether an extracted number can be trusted.
 
 Key decision: only rows written in step 3.4 for accepted candidates feed the analysis queries. An invented or implausible figure can be inspected in `extraction_run`, but it never reaches `pay_by_domain`.
 
-### Code path: `pfq rates load` (Sprint 3: the code path explained for this sprint)
+### Code path: `pfq rates load` (Sprint 3)
 
 This path decides whether a pay figure, from any source, may enter the rate table.
 
@@ -202,6 +203,24 @@ This path decides whether a pay figure, from any source, may enter the rate tabl
 4. A **`LoadRatesResult`** goes back to the CLI, which prints for example `cited-rates: 7 rates: 7 new, 0 unchanged, 0 rejected`, then the issue-code tallies.
 
 Key decision: `rate_observation` holds only validated, cited, hourly-USD figures and has no company column. `rates_by_domain` can therefore aggregate across sources without knowing where a number came from, and it cannot rank named companies (`AGENTS.md` §4.8).
+
+### Code path: a database failure (Sprint 4: the code path explained for this sprint)
+
+This path decides what the user sees when Supabase is paused, slow, or drops the connection.
+
+1. **`cli.open_repo`** calls `open_repository(DATABASE_URL)`, which builds a **`PostgresRepository`**.
+2. **Connect.** `PostgresRepository.__init__` calls **`db_errors.connect_with_retry`** around `psycopg.connect(url, connect_timeout=15, prepare_threshold=None)`.
+   - On a driver error, **`db_errors.classify`** reads only the exception text and SQLSTATE and returns a `DbFailure(kind, message, transient)`.
+   - `transient` kinds (`timeout`, `too_many_connections`) are retried after 2 s, then 4 s (3 attempts in all).
+   - Every other kind (`project_unavailable`, `auth_failed`, `host_unknown`, `refused`, `unknown`) stops at once: retrying a paused project or a wrong password only adds about 15 s per try.
+   - The result is `StorageError("could not connect to the database: <message>")`, raised `from None`, so no traceback can carry the driver text (which names the host and the user, which holds the project id).
+3. **Operate.** The repository's connection is a **`GuardedConnection`**. Every repository method reaches the database through its `execute`, `commit` and `rollback`, so this one wrapper covers them all.
+   - A driver error becomes `StorageError("database operation failed: <message>")`, with the driver error chained as `__cause__` for `PFQ_DEBUG`.
+   - `rollback` swallows its own failure on a dead connection; otherwise that second error would replace the first one in `SqlRepository._transaction`.
+   - **Operations are not retried.** The server has already rolled back the open transaction, and replaying part of a multi-step command on a new connection could repeat half of it. Every load is idempotent, so the message says to re-run the command.
+4. **`cli.main`** catches `PfqError` and prints `error: <message>` with exit code 1. With `PFQ_DEBUG=1` it re-raises instead, showing the chained driver error.
+
+Key decision: retry where it is safe and useful (connecting, transient causes), and give a precise next step everywhere else. The rule table lives in one standard-library module, so it is tested offline with the pooler's real reply text.
 
 ## Data Sources
 
@@ -281,7 +300,7 @@ Hybrid: one `Repository` port, two adapters, chosen by `DATABASE_URL` in `.env`.
 - **Supabase exposure.** Tables live in a dedicated `pfq` schema rather than `public`, so they are not served by Supabase's auto-generated Data API. Row Level Security is enabled as a second guard. Only the server-side connection string is used; no anon or service keys are needed.
 - **Three layers:** **raw** (what was fetched), **cleaned** (Core-validated rows), **analysis** (named queries over cleaned rows only). "Current" postings are the latest snapshot of each listing and the latest accepted extraction of that snapshot.
 
-### Market tables (Sprint 2; rate tables Sprint 3; quality tables are added in Sprint 4)
+### Market tables (Sprint 2; rate tables Sprint 3; quality tables are added in Sprint 5)
 
 | Table              | Key fields                                                                                                                                                                     | Notes                                                                                                                                                                                                                |
 | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -336,13 +355,15 @@ Metrics are recomputed rather than stored so that they always match the current 
 
 | Layer           | How it is tested                                                                                                    | Needs DB / network / key? |
 | --------------- | ------------------------------------------------------------------------------------------------------------------- | ------------------------- |
-| Core            | Unit tests on pay normalization, validation issue codes, agreement metrics against hand-computed or textbook values | No                        |
+| Core            | Unit tests on pay normalization, validation issue codes, and agreement metrics against Krippendorff's published worked example and hand-computed cases (`tests/core/test_agreement.py`) | No                        |
 | Use cases       | Tests with `FakeSource`, `FakeExtractor`, a temp `FileRawStore` and the real repository (the `repo` fixture) | No                        |
 | Repository + queries | One `repo` fixture runs the repository contract, use-case and query tests on a temporary SQLite file by default, and **also on Supabase Postgres** with `pytest -m supabase` (each run in a throwaway `pfq_test_<random>` schema, dropped afterwards) | SQLite: no. Postgres: yes (opt-in) |
 | Schema parity   | Test that `postgres.sql` and `sqlite.sql` declare the same tables and columns, and that RLS is enabled on every Postgres table | No                        |
 | Source adapter  | `AshbySource` against a small hand-made response in the documented shape (no real data committed)                  | No                        |
 | Rate model (S3) | `validate_rate` cases in `tests/core/test_rates.py`. `load_rates` and `JobBoardRates` in `tests/app/test_rates.py`, on the `repo` fixture so they also run on Supabase. `CitedRates` against the committed `data/rates.toml`; `BlsOewsRates` against the live response shape with a fake fetch. `pfq rates load` CLI tests | No |
 | Migrations (S3) | `tests/adapters/test_migrations.py`: a version-1 database is upgraded with its data kept and ends up identical to a fresh one; a re-run is a no-op; a broken migration leaves version 1. `test_schema_parity.py`: matching migration numbers, and the CHECK vocabularies equal Core's | No |
+| Database failures (S4) | `tests/adapters/test_db_errors.py`: the classification rules on stand-in driver errors carrying the real pooler text, connect retry with a fake connect and a recorded sleep, `GuardedConnection` on a connection that drops, and the test fixture's schema cleanup | No |
+| Dataset reader (S4) | `tests/adapters/test_summeval.py`: the reader, invalid scores and the report on a hand-made SummEval-shaped fixture (no real data committed) | No |
 | CLI             | Smoke tests calling `main(argv)` with a fake fetch: the full collect → extract → query path, exit codes, and a check that error messages never show the password | No                        |
 | Real LLM / HTTP | Manual or opt-in runs only, recorded in `docs/sprint-status.md`                                                   | Yes                       |
 
@@ -358,6 +379,8 @@ Policy: **Core stays standard-library only, permanently.** Adapters and analysis
 | `psycopg[binary]` ≥ 3.2 (extra `postgres`) | In use | `PostgresRepository` | Python's standard library cannot talk to Postgres. Psycopg 3 is the maintained driver; the binary build needs no local libpq |
 | HTTP client | Decided: none (standard-library `urllib`) | `adapters/sources/http.py` | One JSON GET per board per run doesn't justify a dependency |
 | `.env` loading | Decided: none (15-line parser in `cli.py`) | CLI | `KEY=VALUE` lines only; python-dotenv isn't needed |
+| Retry library (e.g. tenacity) | Decided in S4: none | `db_errors.connect_with_retry` | One retry site with three attempts is a 20-line loop. A library would make it easy to wrap operations in retries too, which this design rules out (see the database-failure code path) |
+| Statistics library (e.g. krippendorff, scipy) | Decided in S4: none | `core/agreement.py` | Core is standard-library only (DC-2). Alpha is about 30 lines and is checked against the published worked example |
 | LLM provider SDK | **TBD** | Extractor / Judge adapters | Depends on provider choice; plain HTTP is the alternative |
 | numpy / pandas / statsmodels | **TBD**, Exploration Zone | Hedonic regression | Only if the regression moves into scope |
 
@@ -365,11 +388,11 @@ Policy: **Core stays standard-library only, permanently.** Adapters and analysis
 
 | # | Decision                                                  | Default until decided                    |
 | - | --------------------------------------------------------- | ---------------------------------------- |
-| 1 | LLM provider and model (a low-cost "flash"-class model is the leading option); exact monthly cap (low). Needed in S4 | Fake extractor/judge only |
-| 2 | LLM SDK vs. plain HTTP                                    | Decided with the provider (S4)           |
+| 1 | LLM provider and model (a low-cost "flash"-class model is the leading option); exact monthly cap (low). Needed in S5 | Fake extractor/judge only |
+| 2 | LLM SDK vs. plain HTTP                                    | Decided with the provider (S5)           |
 | 3 | Non-USD pay conversion                                    | Flag (`CURRENCY_UNSUPPORTED`) and exclude from hourly figures |
-| 4 | Final plausibility band and confidence threshold          | Provisional $5–$500/h and 0.7, reviewed after the S4 accuracy evaluation. Rates use their own $1–$500/h band (`RATE_POLICY`) |
-| 5 | How job-board titles map to domains beyond keywords, and whether `contractor`/`temporary` always means `expert` | Provisional keyword table (`domain_from_title`) and rule (`rater_kind_for`) until LLM extraction in S4 |
+| 4 | Final plausibility band and confidence threshold          | Provisional $5–$500/h and 0.7, reviewed after the S5 accuracy evaluation. Rates use their own $1–$500/h band (`RATE_POLICY`) |
+| 5 | How job-board titles map to domains beyond keywords, and whether `contractor`/`temporary` always means `expert` | Provisional keyword table (`domain_from_title`) and rule (`rater_kind_for`) until LLM extraction in S5 |
 
 **Decided in Sprint 1:** Supabase Postgres as the system of record with local SQLite for tests (hybrid); pytest as the test runner.
 **Decided in Sprint 2:** psycopg 3; no HTTP or dotenv dependency; Ashby (Mercor, Handshake) as the first source; staff vs. expert market segments; a deterministic baseline extractor before any LLM.
@@ -381,6 +404,8 @@ Policy: **Core stays standard-library only, permanently.** Adapters and analysis
 - the domain vocabulary;
 - numbered SQL migrations;
 - the LLM extractor moved to S4.
+
+**Decided in Sprint 4:** retry only the connect, and only for transient causes; no retry or statistics dependency; Krippendorff's alpha (not Fleiss' kappa) as the first agreement metric; the LLM extractor and review commands moved to S5.
 
 ## What Changed This Sprint
 
@@ -424,3 +449,11 @@ Policy: **Core stays standard-library only, permanently.** Adapters and analysis
   - `posting.domain` is the source department;
   - the full `Repository` method list;
   - the `--fake` flag is `--extractor fake`.
+
+**Sprint 4: strengthening database failure handling (plus the first quality slice).**
+- **Why.** Every connect failure gave the same "check DATABASE_URL in .env" message whatever the cause, and errors during a command surfaced as "unexpected OperationalError". A Sprint 3 test run had also failed with an unknown cause and left a throwaway schema, `pfq_test_52d59e09`, behind.
+- **Storage adapter.** New `adapters/storage/db_errors.py` (`classify`, `connect_with_retry`) and `GuardedConnection` in `postgres_repository.py`. `PostgresRepository` takes `connect_attempts` (default 3). No change to the `Repository` port or the shared SQL.
+- **CLI.** `PFQ_DEBUG=1` now also re-raises handled errors that carry a chained driver error.
+- **Tests.** The Supabase `repo` fixture applies the schema inside its `try`, and drops the schema over a fresh connection if the test's connection died.
+- **Quality side (FR-6, partial).** `core/agreement.py`, `adapters/datasets/summeval.py`, `app/quality.py`, `pfq quality summeval`. Deviation from the Sprint 1 design: there is no `DatasetLoader` port and no quality tables yet. The report reads the file directly and stores nothing; both arrive with the second dataset and the judge (S5).
+- **Foundational change, with reason.** AC-6.1 now names Krippendorff's alpha instead of Fleiss' kappa (`docs/requirements.md`), and DC-9 was added.
