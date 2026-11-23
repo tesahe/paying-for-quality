@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import statistics
 from collections import Counter
+from dataclasses import dataclass, field
 from typing import Callable, Sequence
 
 Score = float
@@ -102,3 +103,19 @@ def mean_gap(first: RatingTable, second: RatingTable) -> float | None:
 def score_in_scale(value: object, low: int, high: int) -> bool:
     """A rating is accepted only as a number (not a bool) inside the dataset's declared scale."""
     return isinstance(value, (int, float)) and not isinstance(value, bool) and low <= value <= high
+
+
+@dataclass
+class RatingData:
+    """A loaded multi-rater dataset: rating tables keyed by (dimension, rater group).
+
+    Every table has one row per item, in the same item order, and one slot per rater. Scores that
+    failed validation are stored as None and counted in `rejected_scores`.
+    """
+
+    dataset: str
+    dimensions: tuple[str, ...]
+    groups: tuple[str, ...]
+    tables: dict[tuple[str, str], list[list[Score | None]]] = field(default_factory=dict)
+    units: int = 0
+    rejected_scores: int = 0

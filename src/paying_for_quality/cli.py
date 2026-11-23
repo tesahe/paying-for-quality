@@ -22,7 +22,8 @@ from .adapters.rates.cited import CitedRates
 from .adapters.sources import registry
 from .adapters.storage import open_repository
 from .adapters.storage.raw_store import FileRawStore
-from .app import market, rates, reporting
+from .adapters.datasets import summeval
+from .app import market, quality, rates, reporting
 from .core.errors import ConfigError, PfqError, SourceNotAllowed
 from .core.entities import RateSourceInfo
 from .core.ports import QueryResult, RateSource
@@ -183,6 +184,15 @@ def cmd_query(args, cfg) -> int:
     return 0
 
 
+def cmd_quality_summeval(args, cfg) -> int:
+    data = summeval.load_summeval(args.file)
+    print(f"{data.dataset}: {data.units} summaries; license: {summeval.LICENSE}")
+    if data.rejected_scores:
+        print(f"{data.rejected_scores} score(s) outside {summeval.SCALE[0]}-{summeval.SCALE[1]} treated as missing")
+    print(format_table(quality.agreement_report(data)))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="pfq", description="Paying for Quality: price vs. value of expertise.")
     parser.add_argument("--env-file", default=".env", help="configuration file (default: .env)")
@@ -210,6 +220,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--source", required=True)
     p.add_argument("--registry", default="data/sources.toml")
     p.set_defaults(func=cmd_rates_load)
+
+    p = sub.add_parser("quality", help="rater agreement on public multi-rater datasets (no database needed)")
+    quality_sub = p.add_subparsers(dest="quality_command", required=True)
+    p = quality_sub.add_parser("summeval", help="Krippendorff's alpha per group and expert vs. crowd, per dimension")
+    p.add_argument("--file", default="data/raw/summeval/model_annotations.aligned.jsonl")
+    p.set_defaults(func=cmd_quality_summeval)
 
     p = sub.add_parser("query", help=f"run a named analysis ({', '.join(reporting.available_queries())})")
     p.add_argument("name")
