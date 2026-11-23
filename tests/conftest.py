@@ -39,15 +39,32 @@ def repo(request, tmp_path):
         pytest.skip("PFQ_TEST_DATABASE_URL is not set")
     from paying_for_quality.adapters.storage.postgres_repository import PostgresRepository
 
-    repository = PostgresRepository(url, schema=f"pfq_test_{uuid.uuid4().hex[:8]}")
+    schema = f"pfq_test_{uuid.uuid4().hex[:8]}"
+    repository = PostgresRepository(url, schema=schema)
     try:
         repository.apply_schema()  # inside the try: a failed setup still drops its half-made schema
         yield repository
     finally:
+        _drop_test_schema(repository, url, schema, PostgresRepository)
+
+
+def _drop_test_schema(repository, url, schema, repository_class) -> None:
+    """Drop a throwaway schema; if the test's connection died, drop it over a fresh one.
+
+    A dead connection during a Sprint 3 run left `pfq_test_52d59e09` behind (found 2026-11-22).
+    """
+    from paying_for_quality.core.errors import StorageError
+
+    try:
+        repository.drop_schema()
+    except StorageError:
+        fresh = repository_class(url, schema=schema)
         try:
-            repository.drop_schema()
+            fresh.drop_schema()
         finally:
-            repository.close()
+            fresh.close()
+    finally:
+        repository.close()
 
 
 @pytest.fixture

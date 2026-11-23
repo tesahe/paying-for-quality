@@ -136,3 +136,24 @@ def test_failed_rollback_does_not_hide_the_original_error():  # AC-10.4
     with pytest.raises(StorageError, match="lost during the command"):
         with repo._transaction():
             repo._execute("INSERT INTO x VALUES (1)")
+
+
+def test_test_teardown_drops_the_schema_over_a_fresh_connection_when_the_old_one_died():
+    from tests.conftest import _drop_test_schema
+
+    events = []
+
+    class Repo:
+        def __init__(self, url=None, schema=None, dead=False):
+            self.dead = dead
+
+        def drop_schema(self):
+            if self.dead:
+                raise StorageError("database operation failed: connection lost")
+            events.append("dropped")
+
+        def close(self):
+            events.append("closed")
+
+    _drop_test_schema(Repo(dead=True), "url", "pfq_test_x", Repo)
+    assert events == ["dropped", "closed", "closed"]  # fresh drop + fresh close, then the dead one closed
