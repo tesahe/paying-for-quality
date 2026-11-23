@@ -52,3 +52,25 @@ How I use AI tools on this project, what I keep, change or reject, and how AI-as
   - Citations are enforced in Core and tested (`CITATION_MISSING`).
   - The schema has no company column, so the aggregate-only rule holds in the data model itself.
   - The real run loaded 154 rates from three kinds of source, and `rates_by_domain` returned aggregates only.
+
+## Sprint 4 Log
+
+| Area | What I had the AI do | My direction and decisions | Verification |
+|---|---|---|---|
+| Plan | Read the Sprint 4 assignment, the project plan and the Sprint 3 follow-ups, then propose one strengthening focus | I asked it to follow the original plan (hardening plus the first quality slice), commit along the way and leave pushing to me | The plan is the commit list on `sprint-4` |
+| Investigation | Reproduce the Sprint 3 "flaky Supabase run" follow-up | I approved restoring the paused Supabase project through the Supabase connector so the fix could be checked live | Redacted driver replies captured before and after the restore (`docs/sprint-status.md`) |
+| Quality slice | Krippendorff's alpha in Core, a SummEval reader and `pfq quality summeval` | I chose to build the reader on a hand-made fixture and not download SummEval yet, to keep Sprint 4 centered on the strengthening work | Alpha reproduces Krippendorff's published example (0.743 nominal, 0.849 interval) |
+
+**Consequential AI contribution (database failure handling: what to retry, and what to say):**
+- **The question.** Sprint 3 left a follow-up: one Supabase test run had 11 setup errors with an unknown cause, and the suggested fix was "add connection retry or timeout handling".
+- **What the AI found.** Probing the database showed that the project had paused itself after 13 idle days. The pooler's reply to a paused project is `FATAL: (ENOTFOUND) tenant/user … not found`, after about 13–15 seconds. `pfq` turned every connect failure into "check DATABASE_URL in .env", which sends the user to the wrong place, and an error during a command printed only "unexpected OperationalError".
+- **What it recommended, and how that was evaluated.**
+  - *Blanket retry with backoff on every database call* (the obvious reading of the follow-up): **rejected.** A retry would not help a paused project or a wrong password; it would only multiply a 15-second wait. Replaying an operation after a dropped connection is unsafe, because the server has already rolled back the transaction and a multi-step command could be half-repeated. Since every load is idempotent, re-running the command is the safe recovery.
+  - *Retry the connect only, only for transient causes (timeout, no free slots), with a classified message for every failure*: **accepted** (`adapters/storage/db_errors.py`).
+  - *A retry library (tenacity)*: **rejected.** It is one retry site, and a library would make wrapping operations easy, which the design rules out.
+- **Where the AI's own change was wrong.** Its first fixture fix moved `apply_schema` inside the `try`, which assumed the orphan came from a failed setup. Once Supabase was back, the leftover schema `pfq_test_52d59e09` turned out to be **complete, at version 2**. The run had died after setup, so the first fix did not cover the observed case. A second fix drops the schema over a fresh connection when the old one is dead (`0b625a1`). Separately, a hand-computed expected correlation in a new test was wrong (0.9934, then 0.99432). The exact-fraction assertion failed and caught it; the right value is 0.99419.
+- **How it was verified.**
+  - 53 new offline test cases (186 in all, up from 133); the classifier is tested with the pooler's real reply text.
+  - A live `pfq init-db` against the paused project printed the new "probably paused: restore it" message.
+  - After the restore, the full Postgres suite and a live `pfq init-db` / `pfq query rates_by_domain` ran against Supabase (`docs/sprint-status.md`).
+- **Limitation.** The cause of the original Sprint 3 failure is still not proven. The leftover schema shows that the connection died after setup; the most likely cause is the session pooler dropping or refusing connections, but it was not reproduced.

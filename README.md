@@ -27,29 +27,28 @@ The economics: efficiency-wage theory says firms overpay when quality is hard to
 
 ## Current Sprint Status
 
-**Sprint 3: Expansion and Integration (complete).** The improvement is a **source-agnostic rate model**: every pay figure, from any source, passes one Core validation and is stored with its citation in `rate_observation`.
-- `pfq rates load --source cited-rates`: 7 published figures (SummEval, MT-Bench, GPQA, Prolific guidance, a Mechanical Turk wage study).
-- `pfq rates load --source bls-oews`: BLS hourly medians for 8 expert occupations, the expert's outside option.
-- `pfq rates load --source job-boards`: rates from the accepted job-board postings, tagged employee or contractor.
-- `pfq query rates_by_domain`: median hourly rate by domain and rater kind.
-- `pfq init-db` now migrates existing databases. The Sprint 2 Supabase data moved to version 2 intact.
+**Sprint 4: Strengthen and Review (complete on `sprint-4`).** The strengthening work is **database failure handling**. On 2026-11-22 the Supabase project had paused itself, and `pfq` told the user to "check DATABASE_URL", which was the wrong place to look. Errors in the middle of a command showed only "unexpected OperationalError".
+- Every database error now ends in a handled message that names the likely cause and the next step ("the project is most likely paused: restore it"), and never repeats the host or user (`adapters/storage/db_errors.py`).
+- Connecting is retried only for transient causes (timeout, no free slots). Operations are never replayed: the server has rolled them back, and every load is idempotent, so the message says to re-run.
+- The Supabase test fixture no longer leaves throwaway schemas behind when a connection dies (two such orphans were found).
+- First quality slice (original plan): Krippendorff's alpha in Core, which reproduces the published worked example, plus `pfq quality summeval` (expert vs. crowd per dimension; real file not downloaded yet).
 
-Tests: `pytest` gives **133 passed** with no credentials; **32 passed** against Supabase. Real run: 154 rates loaded (7 cited, 8 BLS, 139 job-board).
+Tests: `pytest` gives **186 passed** with no credentials (Sprint 3: 133); **32 passed** against Supabase on the final run (an earlier run hit a dropped connection; see `docs/sprint-status.md`).
 
-Known limitation: the expert sample is small (2 job-board contract roles with hourly pay, plus a few cited figures).
-Peer feedback: not received by submission.
-Next (Sprint 4): the quality side (SummEval agreement) and the LLM extractor.
+Known limitation: the cause of the intermittent dropped connections on Supabase's pooler is still unproven. They are now reported clearly and cleaned up, not prevented.
+Peer feedback: not received (see `docs/sprint-status.md`).
+Next (Sprint 5): the LLM judge comparison, the real SummEval run, the LLM extractor and the first price-vs-value summary.
 
 Details: [`docs/sprint-status.md`](docs/sprint-status.md).
 
 ## Planned Components
 
 1. **Collector** — collection of public job-board postings (robots.txt and terms respected). Built.
-2. **Extraction** — a deterministic baseline now; an LLM proposes structured fields in Sprint 4. Core validates either and normalizes pay to hourly.
+2. **Extraction** — a deterministic baseline now; an LLM proposes structured fields in Sprint 5. Core validates either and normalizes pay to hourly.
 3. **Rate model** — pay rates from any source (cited file, BLS, job boards) in one validated, cited table. Built in Sprint 3.
 4. **Storage + SQL** — Supabase (Postgres) with raw, cleaned and analysis layers; tests use a local database so they run without credentials.
-5. **Dataset ingest** — public multi-rater datasets (candidates TBD after the dataset check).
-6. **Rater quality** — agreement metrics, rater scorecards, expert vs. crowd.
+5. **Dataset ingest** — public multi-rater datasets. A SummEval reader is built (Sprint 4); storing ratings in the database comes in Sprint 5.
+6. **Rater quality** — agreement metrics, rater scorecards, expert vs. crowd. Krippendorff's alpha and expert vs. crowd are built (Sprint 4); scorecards are not.
 7. **LLM-judge audit** — judge–expert agreement, bias checks, cost of human vs. LLM labeling.
 8. **Synthesis** — the cost of quality: cost per unit of agreement for expert, crowd and LLM-judge labeling.
 
@@ -78,6 +77,7 @@ To try the tool without Supabase, set `DATABASE_URL=sqlite:///./pfq.db` in `.env
 .venv/bin/pfq query pay_by_domain              # or pay_transparency; add --json
 .venv/bin/pfq rates load --source cited-rates  # data/rates.toml; also: bls-oews (live BLS API), job-boards
 .venv/bin/pfq query rates_by_domain            # median hourly rate by domain and rater kind
+.venv/bin/pfq quality summeval                 # alpha and expert vs. crowd; needs the SummEval file in data/raw/summeval/
 .venv/bin/pytest -m supabase                   # optional: tests against Supabase (needs PFQ_TEST_DATABASE_URL)
 ```
 
@@ -87,7 +87,7 @@ Each is justified in [`docs/architecture.md`](docs/architecture.md#dependencies)
 - `psycopg[binary]`: the Postgres driver for Supabase.
 - `pytest`: tests.
 
-Core, the SQLite path, HTTP and `.env` loading use only the standard library.
+Core (including the agreement math), the SQLite path, HTTP, `.env` loading and the connect retry use only the standard library.
 
 ## Data and Ethics
 
@@ -109,9 +109,10 @@ BLS data is retrieved through the BLS Public Data API (dates in each record's ci
 ## Known Limitations
 
 - **Small expert sample.** Few public job-board postings are contract expert roles, and cited figures are a handful. Every query row shows `n`; none is a market estimate.
-- **Provisional rules.** Domain comes from title keywords; contract and temporary roles are treated as expert work. LLM extraction replaces both in Sprint 4.
+- **Provisional rules.** Domain comes from title keywords; contract and temporary roles are treated as expert work. LLM extraction replaces both in Sprint 5.
 - **Cited figures differ in date and meaning** (a platform minimum vs. a paper's average). Each citation note says which.
 - **BLS** returns only the latest estimates, and excludes the self-employed.
 - No LLM extraction yet; `pfq review` is not built; non-USD pay is excluded from hourly figures.
-- The quality side (rater agreement, LLM judges) is not started. No human raters are recruited; it will use public datasets.
+- The quality side has started with agreement metrics only. The SummEval file has not been run yet, and rater scorecards, stored labels and LLM judges are not built. No human raters are recruited; it uses public datasets.
+- Supabase's free plan pauses the project after about 7 idle days; `pfq` now says so, but the project must be restored by hand.
 - Collection is run by hand.

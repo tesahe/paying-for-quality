@@ -1,6 +1,6 @@
 # Requirements
 
-> **Status:** Sprint 3. Living engineering intent, not a fixed contract. Each requirement has a target sprint and a status (`Planned`, `Partial`, `Implemented`, `Deferred`). Implemented requirements link to their code and tests in [Implementation Map](#implementation-map). Unsettled values are marked **TBD**.
+> **Status:** Sprint 4. Living engineering intent, not a fixed contract. Each requirement has a target sprint and a status (`Planned`, `Partial`, `Implemented`, `Deferred`). Implemented requirements link to their code and tests in [Implementation Map](#implementation-map). Unsettled values are marked **TBD**.
 
 ## Purpose and User
 
@@ -23,11 +23,11 @@
 | ID | Requirement | Target sprint | Status |
 |---|---|---|---|
 | FR-1 | **Collect postings.** The user can collect public job postings from a configured source. Each posting's raw content is stored once per version, and re-running collection does not create duplicates. | S2 | **Implemented** (Ashby. A Greenhouse adapter is not built yet. Expert-gig platform sites are not collected, by decision: `AGENTS.md` §4.7) |
-| FR-2 | **Extract and validate posting fields.** The user can run extraction on collected postings. An extractor proposes fields (company, platform, title, domain, seniority, credentials, pay, posted date). Core validation accepts the result, rejects it, or sends it to a review queue. Every rejection or review carries named issue codes. | S2 (validation, baseline extractor), S4 (LLM extractor) | **Partial**: validation and audit trail implemented; the extractor is the deterministic baseline. The LLM extractor moved to S4 |
+| FR-2 | **Extract and validate posting fields.** The user can run extraction on collected postings. An extractor proposes fields (company, platform, title, domain, seniority, credentials, pay, posted date). Core validation accepts the result, rejects it, or sends it to a review queue. Every rejection or review carries named issue codes. | S2 (validation, baseline extractor), S5 (LLM extractor) | **Partial**: validation and audit trail implemented; the extractor is the deterministic baseline. The LLM extractor moved to S5 (Sprint 4 was spent on reliability; see `docs/sprint-status.md`) |
 | FR-3 | **Normalize pay to hourly.** Every accepted pay quote is converted to an hourly USD range, or explicitly marked as not normalizable with a reason. | S1 (Core + test), S2 (integrated) | **Implemented** |
-| FR-4 | **Query the pay market.** The user can run named, committed SQL analyses over job-board postings: hourly pay by segment and department, and the share of postings that state pay. Results are industry aggregates (`AGENTS.md` §4.8). | S2 | **Implemented**: `pay_by_domain` (by segment and source department) and `pay_transparency`. Credential comparisons need LLM extraction (S4+) |
-| FR-5 | **Review and evaluate extraction.** The user can list, accept or reject queued extractions. The tool reports per-field extraction accuracy against a hand-labeled set of about 100 documents. | S4 (moved from S3) | **Deferred to S4**, together with the LLM extractor. The likely corpus is dataset papers (rater pay, rater qualifications), not job postings |
-| FR-6 | **Audit rater quality.** The user can load a public multi-rater dataset (SummEval first). They can then compute inter-rater agreement, per-rater scorecards, ambiguous items, and expert vs. crowd agreement. | S4 | Planned |
+| FR-4 | **Query the pay market.** The user can run named, committed SQL analyses over job-board postings: hourly pay by segment and department, and the share of postings that state pay. Results are industry aggregates (`AGENTS.md` §4.8). | S2 | **Implemented**: `pay_by_domain` (by segment and source department) and `pay_transparency`. Credential comparisons need LLM extraction (S5+) |
+| FR-5 | **Review and evaluate extraction.** The user can list, accept or reject queued extractions. The tool reports per-field extraction accuracy against a hand-labeled set of about 100 documents. | S5 (moved from S3, then S4) | **Deferred to S5**, together with the LLM extractor. The likely corpus is dataset papers (rater pay, rater qualifications), not job postings |
+| FR-6 | **Audit rater quality.** The user can load a public multi-rater dataset (SummEval first). They can then compute inter-rater agreement, per-rater scorecards, ambiguous items, and expert vs. crowd agreement. | S4 (agreement, expert vs. crowd), S5 (scorecards, ambiguous items, storage) | **Partial**: Krippendorff's alpha per rater group and expert vs. crowd per dimension, from the SummEval file (`pfq quality summeval`). Tested on a hand-made fixture; the real file has not been downloaded or run yet. Scorecards, ambiguous items and storing ratings in the database are not built |
 | FR-7 | **Compare an LLM judge.** The user can run an LLM judge on a dataset's items. The tool reports judge vs. expert agreement alongside expert vs. crowd agreement, plus the judge's cost. | S5 | Planned |
 | FR-8 | **Summarize the cost of quality.** The user can produce a short report comparing the expert pay premium (from `rate_observation`) with the expert quality difference (quality side), as cost per unit of agreement for expert, crowd and LLM-judge labeling. Every number in it comes from Core or a committed SQL query. | S5 | Planned |
 | FR-9 | **Load pay rates from any source.** The user can load pay rates from a registered rate source: a cited file (`data/rates.toml`), BLS OEWS wages, or accepted job-board postings. Each rate passes one Core validation (vocabulary, citation, hourly USD normalization, plausibility), is stored once with its provenance, and can be queried as an aggregate by domain and rater kind. | S3 | **Implemented** |
@@ -40,12 +40,14 @@
 | FR-2 | `core/validation.py`, `app/market.py::extract`, `adapters/llm/baseline.py`, `adapters/llm/fake.py` | `tests/core/test_validation.py`, `tests/app/test_extract.py`, `tests/adapters/test_baseline_extractor.py` |
 | FR-3 | `core/pay.py` | `tests/core/test_pay.py` |
 | FR-4 | `queries/pay_by_domain.sql`, `queries/pay_transparency.sql`, `app/reporting.py` | `tests/app/test_queries.py` (SQLite, and Supabase with `-m supabase`) |
+| FR-6 | `core/agreement.py`, `adapters/datasets/summeval.py`, `app/quality.py`, `cli.py::cmd_quality_summeval` | `tests/core/test_agreement.py`, `tests/adapters/test_summeval.py` (fixture `tests/fixtures/summeval_sample.jsonl`) |
 | FR-9 | `core/rates.py`, `core/vocab.py`, `app/rates.py`, `adapters/rates/cited.py`, `adapters/rates/bls.py`, `adapters/sources/registry.py::load_rate_registry`, `cli.py::cmd_rates_load` / `build_rate_source`, `adapters/storage/sql_repository.py` (rate methods, `apply_schema`), `schema/migrations/*/002_rate_observation.sql`, `queries/rates_by_domain.sql`, `data/rates.toml`, `data/sources.toml` (`[[rate_source]]`) | `tests/core/test_rates.py`, `tests/app/test_rates.py`, `tests/adapters/test_cited_rates.py`, `tests/adapters/test_bls.py`, `tests/adapters/test_migrations.py` (AC-9.5), `tests/adapters/test_repository_contract.py` (rate storage), `tests/test_cli.py` (rates) |
 | DC-1 | `adapters/storage/*`, `schema/*.sql`, `schema/migrations/*/*.sql` | `tests/adapters/test_repository_contract.py`, `tests/adapters/test_schema_parity.py`, `tests/adapters/test_migrations.py` |
 | DC-2 | `core/` | `tests/core/test_core_purity.py` |
-| DC-4 | `adapters/storage/postgres_repository.py`, `cli.py` | `tests/test_cli.py::test_connection_error_never_shows_the_password` |
+| DC-4 | `adapters/storage/postgres_repository.py`, `adapters/storage/db_errors.py`, `cli.py` | `tests/test_cli.py::test_connection_error_never_shows_the_password`, `tests/adapters/test_db_errors.py::test_messages_never_repeat_connection_details` |
 | DC-6 | `data/sources.toml`, `adapters/sources/http.py` | `tests/app/test_collect.py`, `tests/test_cli.py` (blocked sources) |
 | DC-8 | `pyproject.toml` (`-m 'not supabase'`) | `pytest` with no `.env` |
+| DC-9 | `adapters/storage/db_errors.py` (`classify`, `connect_with_retry`), `adapters/storage/postgres_repository.py::GuardedConnection`, `cli.py::main` (`PFQ_DEBUG`), `tests/conftest.py::_drop_test_schema` | `tests/adapters/test_db_errors.py`, `tests/test_cli.py` (database failure, `PFQ_DEBUG`) |
 
 ## Design and Constraint Requirements
 
@@ -59,12 +61,13 @@
 | DC-6 | **Public data, collected gently.** A source is enabled only after its robots.txt and terms are checked and the result is recorded. Requests are rate-limited, use a generic client name, and never touch login-walled pages. Job listings come only from public job-board APIs, never from a company's own website or work platform. Every hand-entered rate cites its source (`AGENTS.md` §4.7–4.9). |
 | DC-7 | **Data handling.** Raw pages and downloaded datasets stay under `data/raw/`, out of git. Every dataset's license is recorded. Non-public rater data is stored separately from public data. Nothing from the owner's contract work enters the repository. |
 | DC-8 | **Verification.** Tests run with `pytest` from the repo root and need no network, Supabase or API key. |
+| DC-9 | **Database failures are diagnosed, not hidden** (Sprint 4). A database error, at connect or during a command, ends as a handled error whose message names the likely cause and the next step (for example "the project is probably paused: restore it") without repeating driver text, which can contain the host or user. Connecting is retried only for transient causes (timeout, no free connection slots); an operation that fails mid-command is not replayed, because the server has rolled it back and the command can be re-run safely. |
 
 ## Interaction / UX Expectations
 
-- **One command per task.** Built: `pfq init-db`, `pfq sources`, `pfq collect`, `pfq extract`, `pfq rates load`, `pfq query`. Planned: `pfq review`, `pfq ingest`, `pfq evaluate`, `pfq report` (see `docs/architecture.md`).
+- **One command per task.** Built: `pfq init-db`, `pfq sources`, `pfq collect`, `pfq extract`, `pfq rates load`, `pfq query`, `pfq quality summeval`. Planned: `pfq review`, `pfq evaluate` (LLM judge), `pfq report` (see `docs/architecture.md`).
 - **Every command ends with a summary of what happened:** counts (e.g. "42 new, 118 unchanged", "37 accepted, 3 rejected, 2 sent to review"), not silence.
-- **Errors say what went wrong and what to do next**, e.g. "DATABASE_URL is not set; copy .env.example to .env". There are no stack traces by default and no secret values in messages.
+- **Errors say what went wrong and what to do next**, e.g. "DATABASE_URL is not set; copy .env.example to .env". There are no stack traces by default and no secret values in messages. `PFQ_DEBUG=1` opts in to the full driver error for debugging (it may show the host).
 - **Re-running a command is safe.** Collection, extraction, rate loading and (later) dataset loading are idempotent.
 - **No-key mode:** `pfq extract --extractor fake` (and the default deterministic `baseline` extractor) run the pipeline without an LLM, so a reviewer can try the tool without an API key.
 - **Machine-readable output:** `--json` on `query`, `evaluate` and `report`.
@@ -96,15 +99,16 @@ Given/When/Then. IDs map to requirements (AC-3.1 belongs to FR-3).
 - **AC-4.1** Given 3 accepted postings in domain "medicine" with hourly midpoints 40, 60 and 80, when `pfq query pay_by_domain` runs, then "medicine" shows a median of 60 and n = 3.
 - **AC-4.2** Given postings that were rejected or are still in review, then they never appear in query results.
 
-**FR-5 Review and evaluate extraction** (deferred to Sprint 4)
+**FR-5 Review and evaluate extraction** (deferred to Sprint 5)
 - **AC-5.1** Given an open review item, when the user accepts it, then a posting is created and the item's status is `accepted`. When they reject it, no posting is created.
 - **AC-5.2** Given the hand-labeled set, when the evaluation runs, then it reports accuracy per field (e.g. pay, unit, domain) and lists every mismatch. The target accuracy is **TBD** after the first run.
 
-**FR-6 Rater quality**
-- **AC-6.1** Given a published worked example for Fleiss' kappa, then Core reproduces its value to 3 decimals.
-- **AC-6.2** Given two raters who agree on every item, then Cohen's kappa is 1.0. Given that every label is the same single category, then kappa is reported as undefined with a reason, not as a crash or a misleading number.
+**FR-6 Rater quality** (Sprint 4: AC-6.1, 6.2, 6.4 on a fixture, 6.5 implemented and tested; AC-6.3 not built)
+- **AC-6.1** Given Krippendorff's published worked example (Krippendorff 2011, 4 observers × 12 units with missing values), then Core reproduces its alpha to 3 decimals: 0.743 nominal, 0.849 interval. *(Changed in Sprint 4 from Fleiss' kappa: SummEval's scores are 1–5 ratings, and alpha handles interval data, missing ratings and unequal rater counts, which Fleiss' kappa does not.)*
+- **AC-6.2** Given raters who agree on every item, then alpha is 1.0. Given no pairable ratings, or a single value everywhere, then alpha is reported as undefined (`None`, shown as blank), not as a crash or a misleading 1.0.
 - **AC-6.3** Given a simulated dataset where one rater is planted as random, then that rater has the lowest scorecard agreement.
-- **AC-6.4** Given SummEval loaded, when `evaluate` runs, then it reports expert–expert, crowd–crowd and expert–crowd agreement for each criterion.
+- **AC-6.4** Given SummEval loaded, when `pfq quality summeval` runs, then it reports expert alpha, crowd alpha and expert–crowd correlation and mean gap for each dimension.
+- **AC-6.5** Given a dataset score that is not a number inside the declared scale (e.g. `"five"`, `9`), then it is treated as a missing rating and counted, never guessed.
 
 **FR-7 LLM judge**
 - **AC-7.1** Given judge outputs where some are off-scale or unparseable, then only valid scores are stored as labels, failures are counted, and the counts appear in the result.
@@ -126,6 +130,10 @@ Given/When/Then. IDs map to requirements (AC-3.1 belongs to FR-3).
 - **AC-DC-4** Given `DATABASE_URL` holds a password, when a connection error is reported, then the message does not contain the password.
 - **AC-DC-5** Given the month's recorded spend plus the next call's estimate would exceed the cap, then the call is not made and the command stops with a clear message.
 - **AC-DC-8** Given a fresh clone with no `.env`, then `pytest` passes.
+- **AC-DC-9.1** Given the pooler's reply for a paused Supabase project ("tenant/user … not found"), then the message says the project is probably paused and to restore it. Wrong password, unknown host, timeout, no free slots, refused and lost connections each get their own message.
+- **AC-DC-9.2** Given a timeout or "no free slots" on connect, then the connect is retried with doubling delays up to 3 attempts. Given a permanent cause (paused, wrong password, unknown host), then there is exactly one attempt.
+- **AC-DC-9.3** Given any database error, then the printed message contains neither the host, the user, nor the project id; with `PFQ_DEBUG=1` the driver error is shown.
+- **AC-DC-9.4** Given the connection drops during a command, then the command ends with a handled "connection lost … re-run the command" error, and a failing rollback does not hide it.
 
 ## Verification Intent
 
@@ -137,7 +145,8 @@ These are the first behaviors to be proven with tests (the Sprint 1 requirement 
 | Extraction validation (FR-2) | Candidate with evidence quotes found in the text | Candidate inventing a pay figure absent from the text; low confidence | Accepted; `EVIDENCE_NOT_FOUND`; sent to review | Tests using scripted fake-extractor outputs; later, real-LLM accuracy on the 100 hand-labeled postings (FR-5) |
 | Idempotent collection (FR-1) | Two runs with unchanged content | Changed content; source not terms-checked | 3 snapshots then "0 new"; new version added; refusal | Use-case test with a fake source and local database; row counts asserted |
 | Rate loading (FR-9) | A cited figure; an annual BLS wage; an hourly contract posting | No citation; an unknown domain; a per-task or EUR rate; an unchecked source; a version-1 database | Stored once with hourly USD; `CITATION_MISSING` / `VOCAB_UNKNOWN` / rejection; refusal before any fetch; migrated with data kept | Core, use-case, adapter, migration and CLI tests (`tests/core/test_rates.py` and others); a real Supabase migration and load |
-| Agreement metrics (FR-6) | Published Fleiss' kappa example | Perfect agreement; one category only; missing labels | Matches published value; 1.0; "undefined" with reason; handled | Comparison with published values, plus a simulation where a planted bad rater must rank last |
+| Agreement metrics (FR-6) | Krippendorff's published alpha example | Perfect agreement; one value only; missing ratings; off-scale scores | Matches published values (0.743, 0.849); 1.0; undefined; handled; counted as missing | Comparison with published values and hand-computed cases (`tests/core/test_agreement.py`); later, a simulation where a planted bad rater must rank last |
+| Database failure handling (DC-9) | A transient timeout that then succeeds | Paused project; wrong password; connection lost mid-command; failed rollback | Retried, then connected; one attempt and "restore it"; handled "re-run"; original error kept | Offline tests with stand-in driver errors using the real observed pooler text (`tests/adapters/test_db_errors.py`); a live run against the paused, then restored, Supabase project |
 
 ## Exploration Zone (not committed for class)
 
