@@ -115,7 +115,33 @@ def test_connection_error_never_shows_the_password(tmp_path, monkeypatch, capsys
     code, out, err = run(capsys, "init-db")
     assert code == 1
     assert "S3cretPassw0rd" not in out + err and "pfq_user" not in out + err
-    assert "check DATABASE_URL" in err
+    assert "refused the connection" in err and "check the host and port in DATABASE_URL" in err
+
+
+def _storage_failure(*_args, **_kwargs):
+    try:
+        raise RuntimeError("driver text with host db.example.supabase.co")
+    except RuntimeError as driver_error:
+        raise cli.PfqError("database operation failed: the connection was lost") from driver_error
+
+
+def test_database_failure_prints_only_the_safe_message(tmp_path, monkeypatch, capsys):  # AC-10.3
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("DATABASE_URL", "sqlite:///x.db")
+    monkeypatch.delenv("PFQ_DEBUG", raising=False)
+    monkeypatch.setattr(cli, "open_repo", _storage_failure)
+    code, out, err = run(capsys, "init-db")
+    assert code == 1 and "connection was lost" in err and "supabase.co" not in out + err
+
+
+def test_pfq_debug_shows_the_chained_driver_error(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("DATABASE_URL", "sqlite:///x.db")
+    monkeypatch.setenv("PFQ_DEBUG", "1")
+    monkeypatch.setattr(cli, "open_repo", _storage_failure)
+    with pytest.raises(cli.PfqError) as exc:
+        cli.main(["init-db"])
+    assert "supabase.co" in str(exc.value.__cause__)
 
 
 def test_usage_error_exit_code(capsys):

@@ -40,12 +40,14 @@ def repo(request, tmp_path):
     from paying_for_quality.adapters.storage.postgres_repository import PostgresRepository
 
     repository = PostgresRepository(url, schema=f"pfq_test_{uuid.uuid4().hex[:8]}")
-    repository.apply_schema()
     try:
+        repository.apply_schema()  # inside the try: a failed setup still drops its half-made schema
         yield repository
     finally:
-        repository.drop_schema()
-        repository.close()
+        try:
+            repository.drop_schema()
+        finally:
+            repository.close()
 
 
 @pytest.fixture

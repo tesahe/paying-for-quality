@@ -223,6 +223,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         return args.func(args, config(args.env_file))
     except PfqError as exc:
+        if os.environ.get("PFQ_DEBUG") and exc.__cause__ is not None:
+            raise  # opt-in: show the chained driver error, which may include connection details
         print(f"error: {exc}", file=sys.stderr)
         return 1
     except Exception as exc:  # unexpected: show the type only; messages may carry connection details
